@@ -1,0 +1,26 @@
+Hashes:
+   9ace8da13504444a98946407ecc83fa59efa2c8ebc3d0fda73b11b28aa1b0664 Microsoft: Yes McAfee: Yes
+   SHA256 Hash: 9ace8da13504444a98946407ecc83fa59efa2c8ebc3d0fda73b11b28aa1b0664 
+   SHA1 Hash: 5375a6116eec6445fad06b78ba87ea17943ae085 
+   MD5 Hash: d4eb2628dd8a3ee863ff400529f2a316 
+   Delivery Method: web_drive-by 
+   First Seen: 2023-11-15 12:58:53 
+   Last Seen: 2023-11-16 05:40:52 
+   Signature: RiseProStealer 
+   Tags: ['exe', 'RiseProStealer', 'signed'] 
+   MalwareBazaar URL hxxps://bazaar[.]abuse[.]ch/sample/9ace8da13504444a98946407ecc83fa59efa2c8ebc3d0fda73b11b28aa1b0664
+
+   5375a6116eec6445fad06b78ba87ea17943ae085 Microsoft: Yes McAfee: Yes
+   SHA256 Hash: 9ace8da13504444a98946407ecc83fa59efa2c8ebc3d0fda73b11b28aa1b0664 
+   SHA1 Hash: 5375a6116eec6445fad06b78ba87ea17943ae085 
+   MD5 Hash: d4eb2628dd8a3ee863ff400529f2a316 
+   Delivery Method: web_drive-by 
+   First Seen: 2023-11-15 12:58:53 
+   Last Seen: 2023-11-16 05:40:52 
+   Signature: RiseProStealer 
+   Tags: ['exe', 'RiseProStealer', 'signed'] 
+   MalwareBazaar URL hxxps://bazaar[.]abuse[.]ch/sample/9ace8da13504444a98946407ecc83fa59efa2c8ebc3d0fda73b11b28aa1b0664
+
+   Failed to fetch hash report for 5375a6116eec6445fad06b78ba87ea1794332523[.] Status Code: 404
+   MalwareBazaar has no information on 5375a6116eec6445fad06b78ba87ea1794332523
+
