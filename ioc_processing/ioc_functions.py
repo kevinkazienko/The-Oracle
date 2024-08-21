@@ -1058,6 +1058,19 @@ def analysis(selected_category, iocs, output_file_path=None, progress_bar=None, 
                     if progress_bar:
                         progress_bar.value += progress_step
 
+
+                        # Calculate verdict and score breakdown
+                        total_score, breakdown, verdict = calculate_total_malicious_score(
+                            {
+                                "VirusTotal": report_vt_url,
+                                "URLScan": report_urlscan,
+                                "AlienVault": report_alienvault,
+                            },
+                            borealis_report,
+                            ioc_type="url"
+                        )
+                        combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+
                 
                         # VirusTotal Report
                         if report_vt_url:
@@ -1113,16 +1126,18 @@ def analysis(selected_category, iocs, output_file_path=None, progress_bar=None, 
                             combined_report += "Borealis Report:\nN/A\n\n"
 
                     # Calculate verdict and score breakdown
-                        total_score, breakdown, verdict = calculate_total_malicious_score(
-                            {
-                                "VirusTotal": report_vt_url,
-                                "URLScan": report_urlscan,
-                                "AlienVault": report_alienvault,
-                            },
-                            borealis_report,
-                            ioc_type="url"
-                        )
-                        combined_report += f"Verdict: {verdict} (Score: {total_score})\n\nScore Breakdown\n{breakdown}\n\n"
+                        # total_score, breakdown, verdict = calculate_total_malicious_score(
+                        #     {
+                        #         "VirusTotal": report_vt_url,
+                        #         "URLScan": report_urlscan,
+                        #         "AlienVault": report_alienvault,
+                        #     },
+                        #     borealis_report,
+                        #     ioc_type="url"
+                        # )
+                        # combined_report += f"Verdict: {verdict} (Score: {total_score})\n\nScore Breakdown\n{breakdown}\n\n"
+
+                        combined_report += f"Score Breakdown\n{breakdown}\n\n"
                         
                     # Append to scores list for sorting
                     ioc_scores.append((entry, total_score, combined_report))
@@ -1146,12 +1161,22 @@ def analysis(selected_category, iocs, output_file_path=None, progress_bar=None, 
                     if progress_bar:
                         progress_bar.value += progress_step
 
-                
                     breakdown = []
                     verdict = "Not Malicious"
                     total_score = 0
 
-                
+                    # Calculate verdict and score breakdown
+                    total_score, breakdown_str, verdict = calculate_total_malicious_score(
+                        {
+                            "VirusTotal": report_vt_hash,
+                            "MalwareBazaar": report_malwarebazaar,
+                            "AlienVault": report_alienvault,
+                        },
+                        None,  # Borealis is not used for hashes, so pass None
+                        ioc_type="hash"
+                    )
+                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+
                     # VirusTotal Hash Report
                     if report_vt_hash and report_vt_hash != f"Failed to fetch VirusTotal hash report for {entry}.":
                         basic_properties = report_vt_hash.get("basic_properties", {})
@@ -1245,15 +1270,16 @@ def analysis(selected_category, iocs, output_file_path=None, progress_bar=None, 
                         combined_report += "AlienVault OTX Report:\nN/A\n\n"
 
                     # Calculate verdict and score breakdown
-                    total_score, breakdown_str, verdict = calculate_total_malicious_score(
-                        {
-                            "VirusTotal": report_vt_hash,
-                            "MalwareBazaar": report_malwarebazaar,
-                            "AlienVault": report_alienvault,
-                        },
-                        ioc_type="hash"
-                    )
-                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                    # total_score, breakdown_str, verdict = calculate_total_malicious_score(
+                    #     {
+                    #         "VirusTotal": report_vt_hash,
+                    #         "MalwareBazaar": report_malwarebazaar,
+                    #         "AlienVault": report_alienvault,
+                    #     },
+                    #     ioc_type="hash"
+                    # )
+                    # combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                    # combined_report += f"Score Breakdown\n{breakdown_str}\n\n"
                     combined_report += f"Score Breakdown\n{breakdown_str}\n\n"
 
                     # Append to scores list for sorting
