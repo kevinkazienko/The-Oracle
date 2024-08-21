@@ -431,6 +431,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type):
 
         # URL and Domain-based IOC
         elif ioc_type in ["url", "domain"]:
+            print(f"DEBUG: Breakdown before joining: {breakdown}")
             # VirusTotal
             if 'VirusTotal' in reports:
                 vt_report = reports['VirusTotal']
@@ -524,57 +525,93 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type):
             breakdown.append(f"{borealis_info}")
                     
         # Hash-based IOC
-        elif ioc_type == "hash":
+        if ioc_type == "hash":
+            print(f"DEBUG: Processing Hash IOC")
+            
             # VirusTotal
             if 'VirusTotal' in reports:
                 vt_report = reports['VirusTotal']
-                
-                # Extract malicious and suspicious counts from the nested 'last_analysis_stats' field
                 last_analysis_stats = vt_report.get('data', {}).get('attributes', {}).get('last_analysis_stats', {})
                 malicious_count = last_analysis_stats.get('malicious', 0)
                 suspicious_count = last_analysis_stats.get('suspicious', 0)
-                
-                # Debugging: Ensure we're extracting the right values from the report
+        
                 print(f"DEBUG: Extracted Malicious count: {malicious_count}")
                 print(f"DEBUG: Extracted Suspicious count: {suspicious_count}")
-                
+        
                 total_score += int(malicious_count)  # Ensure it's converted to an integer
                 total_score += int(suspicious_count) // 2  # Half weight for suspicious detections
-                
-                # Update breakdown with correct counts
+        
                 breakdown.append(f"VirusTotal:\n  Malicious={malicious_count}\n  Suspicious={suspicious_count}")
-                
+        
                 # Signature Information
-                signature_info = vt_report.get('signature_information', {})
-                if signature_info.get('valid_signature', False):
-                    breakdown.append(f"  Signature: Valid signature from {signature_info.get('signature_name', 'N/A')}")
-                    total_score -= 2  # Reduce score for valid signatures
+                signature_info = vt_report.get('data', {}).get('attributes', {}).get('signature_info', {})
+                print(f"DEBUG: signature_info type: {type(signature_info)} - content: {signature_info}")
+                
+                if isinstance(signature_info, dict):
+                    verified = signature_info.get('verified', 'Invalid')
+                    signers = signature_info.get('signers', [])
+                
+                    # Check if signers is a list and convert each signer to a string
+                    if isinstance(signers, list):
+                        try:
+                            # Convert each signer to string
+                            signers_str = ', '.join([str(signer) if not isinstance(signer, dict) else str(signer) for signer in signers])
+                            print(f"DEBUG: Final Signature string: {signers_str}")
+                        except Exception as e:
+                            signers_str = "Error parsing signers"
+                            print(f"DEBUG: Error parsing signers: {e}")
+                    else:
+                        # Convert non-list signers to string directly
+                        signers_str = str(signers)
+                        print(f"DEBUG: Signers converted to string: {signers_str}")
+                
+                    # Safely append signature information
+                    if verified == 'Signed':
+                        breakdown.append(f"  Signature: Valid (Signed by: {signers_str})")
+                        total_score -= 2  # Reduce the score for a valid signature
+                    else:
+                        breakdown.append("  Signature: Invalid or not present")
+                        total_score += 20  # Increase score if the signature is invalid or not found
                 else:
-                    breakdown.append("Signature: Invalid or no signature found\n")
+                    breakdown.append("  Signature: No signature information available")
                 
                 # Crowdsourced Context
                 crowdsourced_context = vt_report.get('crowdsourced_context', 'N/A')
+                if isinstance(crowdsourced_context, (list, dict)):
+                    crowdsourced_context = str(crowdsourced_context)
                 if crowdsourced_context != 'N/A':
                     total_score += 2  # Arbitrary weight for crowdsourced context
                     breakdown.append(f"  Crowdsourced Context: {crowdsourced_context}")
                 
                 # YARA Rules
                 yara_rules = vt_report.get('yara_rules', [])
+                if isinstance(yara_rules, list):
+                    yara_rules_str = ', '.join([str(rule) for rule in yara_rules])
+                else:
+                    yara_rules_str = str(yara_rules)
                 if yara_rules:
                     total_score += len(yara_rules)  # Add weight per YARA rule
-                    breakdown.append(f"  Livehunt YARA Rules: {', '.join(yara_rules)}")
+                    breakdown.append(f"  Livehunt YARA Rules: {yara_rules_str}")
                 
                 # Crowdsourced IDS Rules
                 ids_rules = vt_report.get('crowdsourced_ids_rules', [])
+                if isinstance(ids_rules, list):
+                    ids_rules_str = ', '.join([str(rule) for rule in ids_rules])
+                else:
+                    ids_rules_str = str(ids_rules)
                 if ids_rules:
                     total_score += len(ids_rules)  # Add weight per IDS rule
-                    breakdown.append(f"  Crowdsourced IDS Rules: {', '.join(ids_rules)}")
+                    breakdown.append(f"  Crowdsourced IDS Rules: {ids_rules_str}")
                 
                 # Dynamic Analysis Sandbox Detections
                 sandbox_detections = vt_report.get('dynamic_analysis_detections', [])
+                if isinstance(sandbox_detections, list):
+                    sandbox_detections_str = ', '.join([str(detection) for detection in sandbox_detections])
+                else:
+                    sandbox_detections_str = str(sandbox_detections)
                 if sandbox_detections:
                     total_score += len(sandbox_detections)  # Add weight per sandbox detection
-                    breakdown.append(f"  Dynamic Analysis Sandbox Detections: {', '.join(sandbox_detections)}")
+                    breakdown.append(f"  Dynamic Analysis Sandbox Detections: {sandbox_detections_str}")
         
             # MalwareBazaar
             malwarebazaar_report = reports.get("MalwareBazaar", {})
@@ -595,12 +632,14 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type):
                     downloads = 0
                     uploads = 0
         
+                print(f"DEBUG: Extracted downloads: {downloads}, uploads: {uploads}")
+        
                 if country != "N/A" or downloads > 0:
                     malicious_count += 1
                 breakdown.append(f"MalwareBazaar:\n  Country={country}\n  Downloads={downloads}\n  Filename={filename}\n  Uploads={uploads}\n  Delivery Method={delivery_method}\n  Tags={tags}")
                 total_sources += 1
                 total_score += downloads  # Add downloads to score
-            
+        
             # AlienVault
             alienvault_report = reports.get("AlienVault", {})
             if isinstance(alienvault_report, dict):
@@ -620,7 +659,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type):
                 if provider:
                     trusted_provider_found = provider
                     breakdown.append(f"  Trusted Provider Detected in AlienVault: {trusted_provider_found}")
-        
+
         # Final score and verdict calculation
         if malicious_count > (total_sources / 2):
             if trusted_provider_found:
@@ -632,10 +671,12 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type):
             breakdown.append(f"  Trusted Provider Detected: {trusted_provider_found}...Proceed with caution")
         else:
             verdict = "Not Malicious"
-        
+
+        print(f"DEBUG: Final Score: {total_score}, Verdict: {verdict}")
         return total_score, "\n".join(breakdown), verdict
 
     except Exception as e:
+        print(f"ERROR: Exception encountered during score calculation: {str(e)}")
         return 0, f"Error during score calculation: {str(e)}", "Unknown"
 
 
