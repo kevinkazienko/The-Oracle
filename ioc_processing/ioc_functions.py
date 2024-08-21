@@ -870,6 +870,21 @@ def analysis(selected_category, iocs, output_file_path=None, progress_bar=None, 
                     borealis_report = request_borealis(entry, ioc_type="ip", status_output=status_output, progress_bar=progress_bar)
                     if progress_bar:
                         progress_bar.value += progress_step
+
+
+                    # Calculate verdict and score breakdown
+                    total_score, breakdown, verdict = calculate_total_malicious_score(
+                        {
+                            "VirusTotal": report_vt_ip,
+                            "AbuseIPDB": report_abuseipdb,
+                            "IPQualityScore": report_ipqualityscore,
+                            "GreyNoise": report_greynoise,
+                            "AlienVault": report_alienvault,
+                        },
+                        borealis_report,
+                        ioc_type="ip"
+                    )
+                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
                  
                                         
                         # VirusTotal Report
@@ -992,19 +1007,20 @@ def analysis(selected_category, iocs, output_file_path=None, progress_bar=None, 
                     else:
                         combined_report += "Borealis Report:\nN/A\n\n"
 
-                    # Calculate verdict and score breakdown
-                    total_score, breakdown, verdict = calculate_total_malicious_score(
-                        {
-                            "VirusTotal": report_vt_ip,
-                            "AbuseIPDB": report_abuseipdb,
-                            "IPQualityScore": report_ipqualityscore,
-                            "GreyNoise": report_greynoise,
-                            "AlienVault": report_alienvault,
-                        },
-                        borealis_report,
-                        ioc_type="ip"
-                    )
-                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n\nScore Breakdown\n{breakdown}\n\n"
+                    # # Calculate verdict and score breakdown
+                    # total_score, breakdown, verdict = calculate_total_malicious_score(
+                    #     {
+                    #         "VirusTotal": report_vt_ip,
+                    #         "AbuseIPDB": report_abuseipdb,
+                    #         "IPQualityScore": report_ipqualityscore,
+                    #         "GreyNoise": report_greynoise,
+                    #         "AlienVault": report_alienvault,
+                    #     },
+                    #     borealis_report,
+                    #     ioc_type="ip"
+                    # )
+                    # combined_report += f"Verdict: {verdict} (Score: {total_score})\n\nScore Breakdown\n{breakdown}\n\n"
+                    combined_report += f"ScoreBreakdown\n{breakdown}\n\n"
 
 
                     # Append to scores list for sorting
