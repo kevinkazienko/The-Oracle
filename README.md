@@ -1,7 +1,9 @@
-# Infra-Validation
+![image](https://github.com/kevinkazienko/The-Oracle/blob/main/The_Oracle_Banner_IOC_Validation_Tool2.jpg)
+![image](https://github.com/kevinkazienko/The-Oracle/blob/main/oracle_logo.jpg)  
 
-A Security Operations Center (SOC) analyst’s role is to monitor an organization’s computer systems, identify suspicious activity or security breaches, and investigate whether they pose a real threat to the company.
-However, a SOC often faces challenges when they spend time analyzing Indicators of Compromise (IOCs) that are not active or not malicious.  
+# The Oracle
+
+A Security Operations Center (SOC) analyst’s role is to monitor an organization’s computer systems and networks, identify suspicious activity or security breaches and investigate whether they pose a real threat to the organization; however, a SOC often faces challenges spending time and resources analyzing Indicators of Compromise (IOCs) that are not active and no longer malicious or never were to begin with.
 
 Here are some of the issues:
 + **False Positives**: False positives can waste valuable time and resources as analysts investigate non-existent incidents. This can lead to SOC analysts spending a significant amount of time chasing down alerts that end up being harmless, reducing their efficiency and effectiveness.
@@ -15,7 +17,7 @@ IOC validation is part of the strategy that can help reduce the number of false 
 
 # Description
 
-This conjunction of Python scripts is designed for security analysts, researchers, and enthusiasts, facilitating automated interactions with multiple cybersecurity APIs including VirusTotal, MalwareBazaar, and AbuseIPDB. The tool automates the process of sending API requests to these platforms, handling requests and responses effectively. It is particularly useful for quickly gathering and analyzing data related to file hashes, IP addresses, or domain information, thereby streamlining tasks in cybersecurity analysis and research.
+The Oracle is designed for security analysts, researchers and enthusiasts - facilitating automated interactions with multiple trusted cybersecurity APIs including VirusTotal, MalwareBazaar, AbuseIPDB, URLScan and more. It automates the process of sending API requests to these platforms, handling requests and responses effectively. Based on the IOC being scanned, The Oracle will review the reports from applicable vendors and calculate a malicious score based on relevant parts of the report which can be used to determine maliciousness and give a verdict if the data is fresh within the last 14 days stating whether the IOC is likely still active/malicous or not.
 
 ## Table of Contents
 - [Description](#description)
@@ -35,55 +37,65 @@ This conjunction of Python scripts is designed for security analysts, researcher
 
 ## Features
 
-- **VirusTotal API Integration**: Automate IP, URL/Domain and file hash queries and receive detailed analysis reports.
+- **VirusTotal API Integration and Rescan Capability**: Automate IP, URL/Domain and file hash queries and receive detailed analysis reports. If the report received from VirusTotal isn't recent within the last 14 days, the IOC is automatically resubmitted for a rescan to ensure the most current results.
 - **MalwareBazaar Access**: Easily check and retrieve data about various malware samples.
 - **AbuseIPDB Lookup**: Quickly look up and analyze the reputation of IP addresses.
-- **Shodan Report**: Additional reporting enhancement from Shodan.
-- **IPQualityScore**: Checks IOC's for fraud activity and other reputation scoring.
-- **AlienVault OTX**: Additional augmentation from AlienVault OTX, including pulses.
-- **Grey Noise**: Has the IOC been seen by Grey Noise, what do they think?
-- **Borealis**: Now open-source and integrated into the script. [08/19/2024]
-- **Jupyter Notebook UI**: Still in development...
+- **Shodan Contextual Report**: Additional reporting enhancement from Shodan.
+- **IPQualityScore Reputation**: Checks IOC's for fraud activity and other reputation scoring. Severity 2 is currently in use for report data that is current within the past 14 days.
+- **AlienVault OTX Contextual Report**: Additional augmentation from AlienVault OTX, including pulses.
+- **Grey Noise Sighting**: Has the IOC been seen by Grey Noise, what do they think?
+- **Borealis Integration**: Integrated into Borealis for enhanced IOC report augmentation.
+- **MetaDefender Integration**: Integrated MetaDefender as a new source for validation.
 - **User-friendly Configuration**: Simple setup with API key configuration and easy-to-use functions.
 - **Extensible Framework**: Designed for easy addition of more APIs or enhancement of existing functionalities.
 - **Modular Design**: Functions are now separated into different modules for better maintainability and scalability. [12/03/2023]
 - **Input Sanitization**: Enhanced input processing to remove unnecessary port numbers and other artifacts. [12/03/2023]
-- **Output Sanitization**: IOC's in output reports are defanged for safe sharing. [07/11/2024]
-- **Maliciousness Scoring**: The script will scan IOC's and if the available data from the last 14 days deems the IOC to be malicious, the IOC will be flagged as malicious in the verdict and give a score breakdown.
+- **Report Output Defanging**: Enhanced output reporting with IP and domain/URL de-weaponizing.
+- **Automatic IOC Type Detection**: The script now automatically detects the type of IOC being searched.
 
 ## Getting Started
 
 ### Dependencies
 
 - Python 3.x
-- `requests` library <i>(if not already installed in your environment)</i>
+- `requests` library
 
 ### Installation
 
-**Disclaimer:** <i>This notebook will likely only run in an Unclassified environment as scans from this tool typically fail to breach the perimeter of a PB or higher network. This tool is also mostly non-attributable as it simply performs the same search a user does when visiting the validation sources website and performing the analysis/scan there.</i>
+1. **Clone the Repository**: 
 
-**Uploading .zip to JupyHub**: 
+    First, clone the repository to your local machine:
 
-At this time the only way to install the notebook is by the following:
-- Download the repository as an archive (.zip, .tar, etc)
-- Upload the archive to JupyHub into the directory of your choice (Root directory recommended)
-- Extract the archive:
-   - `unzip infra-validation-<branch>.zip -d infra-validation` <-- your branch may vary depending on if you get the repo from main or dev
-   - Then open the infra-validation directory in JupyHub and run `ioc_validator_ui.ipynb`
+    ```bash
+    git clone https://github.com/kevinkazienko/The-Oracle.git
+    cd The-Oracle
+    ```
 
-### Setting Up
+2. **Install Dependencies**: <i> Typically not required</i>
 
-Replace the API keys in the `api/api_keys.py`  with your own obtained from VirusTotal, MalwareBazaar, AbuseIPDB and other sources as described below.
+    If you haven't installed the `requests` library, you can do so by running:
+
+    ```bash
+    pip install requests
+    ```
+3. **Check Requirements.txt**
+
+   You can always run:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   It will install requirements to run this script.
+
+## Set Up
 
 ### API Keys Configuration
 
-The script requires API keys for all validation sources. Follow these steps to configure them:
+The script requires API keys for VirusTotal, MalwareBazaar, and AbuseIPDB. Replace the API keys in the `api/api_keys.py`  with your own obtained from VirusTotal, MalwareBazaar, AbuseIPDB and other sources. Follow these steps to configure them:
 
 1. **Obtain API Keys**:
    
    - Register and obtain an API key from [VirusTotal](https://www.virustotal.com/).
    - Do the same for [MalwareBazaar](https://bazaar.abuse.ch/) and [AbuseIPDB](https://www.abuseipdb.com/).
-   - Other vendors will likely have a similar approach, most vendors have free but limited API access, granting enhanced features with paid API access.
 
 2. **Configure the Script**:
 
@@ -93,49 +105,48 @@ The script requires API keys for all validation sources. Follow these steps to c
 
 ### Usage
 
-This tool runs in a Jupyter Notebook and has a UI. All that's needed to get started is running the ioc_validator_ui.ipynb notebook.
-Ensure you have the necessary API keys set up in api_keys.py.
+To use this tool, simply run the script with Python.
+Ensure you have the necessary API keys set up in the script.
 
-**Here is a basic example of how to run the script**
+**Here is a basic example of how to run the script:**
 
-**Run the UI notebook and choose option (ie. IP scan), enter your IOC and select whether to save the output to a file:**
+**Script start:** <i> Run the The Oracle-UI.ipynb notebook enter IOC and click Start Validation
 
-![image](https://gitlab.chimera.cyber.gc.ca/kevin.kazienko/infra-validation/-/raw/main/validator_new_ui.png?ref_type=heads)
+<i>Note: The UI accepts fanged or defanged raw input, file upload or Jupyhub local storage via input_files directory.</i>
 
-**Start validation process:**
+![image](https://github.com/kevinkazienko/The-Oracle/blob/main/Screenshot%202024-10-03%20131252.png)
 
-![image](https://gitlab.chimera.cyber.gc.ca/kevin.kazienko/infra-validation/-/raw/main/progress_indicator.png?ref_type=heads)
+**Script run:** Completion results in final report for IOC
 
-**Script runs and scans given IOC(s) and provides a report:**
+![image](https://github.com/kevinkazienko/The-Oracle/blob/main/Screenshot%202024-10-03%20131316.png
+)
 
-![image](https://gitlab.chimera.cyber.gc.ca/kevin.kazienko/infra-validation/-/raw/main/analysis_output_for_ip.png?ref_type=heads)
 
-**Example Bulk Report for IP's:**
-![image](https://gitlab.chimera.cyber.gc.ca/kevin.kazienko/infra-validation/-/raw/main/bulk_ips.png?ref_type=heads)
+**Score Breakdown**
 
-**Example Bulk Combined Report:**
-![image](https://gitlab.chimera.cyber.gc.ca/kevin.kazienko/infra-validation/-/raw/main/bulk_combined.png?ref_type=heads)
+![image](https://github.com/kevinkazienko/The-Oracle/blob/main/Screenshot%202024-10-10%20060914.png)
 
-## Future Improvements 
+## Future Improvements  
 
-- [X] Integrate additional cybersecurity-related APIs to provide more comprehensive data analysis.
-- [X] Searching for reliable Vendors.
-- [X] Add support for different types of data, like threat intelligence feeds, DNS query information, and SSL certificate details.
-- [X] Integrate Borealis for enhanced IOC augmentation.
+- [X] Integrate additional cybersecurity-related APIs to provide more comprehensive data analysis. 
+- [X] Searching for reliable Vendors
+- [ ] Add support for different types of data, like threat intelligence feeds, DNS query information, and SSL certificate details.
 - [ ] Optimize performance to handle large volumes of IOCs with minimal latency.
+- [ ] MISP integration.
 
 ## Version History:
+
 **V1**  
 VirusTotal, AbuseIPDB and MalwareBazaar interaction.
 
 **V1.5**  
 Shodan, AlienVault, GreyNoise, IPQualityScore interaction.
 
-**V1.8**  
-Revamped reporting mechanism so analysis and bulk analysis are completely separate. Also added the beginnings of a UI for the scripts for each of use.
+**V2**  
+Added BinaryEdge, Borealis, new UI
 
-**V1.9**  
-Added a companion notebook to add a UI element. Added URLScan API, as well as defanging for reports.
+**V2.1**  
+Added UI support for light/dark mode
 
-**V2.0**
-Integrate Borealis search for further augmentation.
+**V2.5**  
+Revamped UI, auto IOC type detection for searches.

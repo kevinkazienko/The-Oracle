@@ -2,6 +2,7 @@ import requests
 import json
 import urllib
 import argparse
+import re
 #from defang import defang
 from pprint import pprint as pp
 from file_operations.file_utils import (
@@ -13,6 +14,7 @@ from file_operations.file_utils import (
 )
 from IPython.display import clear_output, HTML, display
 
+
 # Set the Borealis host
 global BOREALIS_HOST
 BOREALIS_HOST = "https://borealis.ino.u.azure.chimera.cyber.gc.ca"
@@ -23,26 +25,29 @@ def request_borealis(request, ioc_type, modules=None, print_response=True, print
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching report from Borealis for {request}...</b>'))
+            display(HTML(f'<b>Fetching Borealis report for {request}...</b>'))
             display(progress_bar)
+
+    print(f"DEBUG: Fetching Borealis report for {request}.")
+    print(f"DEBUG: IOC type detected = {ioc_type}")
 
     # Sanitize the request for URLs
     if request.startswith("http"):
         request = urllib.parse.quote_plus(request)
 
-    # Define correct modules based on IOC type
-    if modules:
-        selected_modules = modules
-    else:
-        selected_modules = get_modules_by_ioc_type(ioc_type)  # Select appropriate modules based on IOC type
+    # Use provided modules or get default modules by IOC type
+    selected_modules = modules if modules else get_modules_by_ioc_type(ioc_type)
+
+    # Debugging: Show which modules are being used
+    print(f"DEBUG: Selected modules for {ioc_type} = {selected_modules}")
 
     response = requests.get(f"{BOREALIS_HOST}/process/{request}?modules={selected_modules}&ioc_type={ioc_type}")
 
     if response.ok:
         jresponse = response.json()
-        print(f"Borealis report on {request} has been received.")
+        print(f"DEBUG: Borealis report on {request} has been received.")
     else:
-        print("Error: server did not return 200 OK response")
+        print(f"ERROR: Borealis server did not return 200 OK response. Status code: {response.status_code}")
         return None
 
     return jresponse
@@ -53,20 +58,6 @@ def format_borealis_report(report, ioc_type, request):
         return "Borealis Report:\nN/A\n\n"
 
     formatted_result = f"Borealis Report for {sanitize_and_defang(request)}:\n"
-
-    # # Extract IP from 'ips' list
-    # if ioc_type == "ip":
-    #     ip_field = report.get('ips', [])
-    #     ip_address = ip_field[0] if ip_field else 'N/A'  # Fetch the first IP in the list
-    #     formatted_result += f"IP: {sanitize_and_defang(ip_address)}\n"
-    # elif ioc_type == "url":
-    #     domain = report.get('domain', 'N/A')
-    #     formatted_result += f"Domain: {sanitize_and_defang(domain)}\n"
-    #     formatted_result += "IP Addresses:\n"
-    #     for ip_info in report.get('ip_addresses', []):
-    #         formatted_result += f"  - {sanitize_and_defang(ip_info)}\n"
-    # elif ioc_type == "hash":
-    #     formatted_result += f"Hash: {sanitize_and_defang(report.get('hash', 'N/A'))}\n"
 
     # Loop through the modules and format them
     modules = report.get("modules", {})
@@ -114,35 +105,38 @@ def get_modules_by_ioc_type(ioc_type):
     Returns the appropriate Borealis modules based on the IOC type.
     """
     if ioc_type == "ip":
-        return "Maxmind,BeAVER,NCTNS,Stonewall,ARIN,Spur,Neustar"
+        modules = "Maxmind,BeAVER,NCTNS,STONEWALL,ARIN,Spur,Neustar"
     elif ioc_type == "domain":
-        return "AUWL,BeAVER,MOOSE,AlphabetSoup,Stonewall,Top1Million,DNSDB"
+        modules = "AUWL,BeAVER,MOOSE,ALPHABETSOUP,STONEWALL,TOP1MILLION,DNSDB"
     elif ioc_type == "url":
-        return "AUWL,BeAVER,SAFEBROWSING"
+        modules = "AUWL,BeAVER,SAFEBROWSING,ALPHABETSOUP"
     else:
-        return None
+        modules = None
+    
+    # Debugging: Output the modules selected for the IOC type
+    print(f"DEBUG: Modules selected for {ioc_type}: {modules}")
+
+    return modules
 
 # Analyze function that integrates Borealis with IOC processing
-def analyze_ioc(ioc):
-    # Determine the type of IOC
-    if is_ip(ioc):
-        ioc_type = "ip"
-    elif is_domain(ioc):
-        ioc_type = "domain"
-    elif is_url(ioc):
-        ioc_type = "url"
-    else:
-        print("Unknown IOC type.")
-        return
+def analyze_ioc(ioc, ioc_type):
+    # Debugging: Output the IOC type
+    print(f"DEBUG: Analyzing IOC '{ioc}' as type '{ioc_type}'")
 
     # Get the corresponding modules for the IOC type
     modules = get_modules_by_ioc_type(ioc_type)
 
+    # Debugging: Output the selected modules for the IOC type
+    print(f"DEBUG: Modules selected for {ioc_type}: {modules}")
+
     # Request Borealis report
     result = request_borealis(request=ioc, ioc_type=ioc_type, modules=modules)
-    
-    # Process and format the result
-    formatted_report = {sanitize_and_defang(format_borealis_report(result, ioc_type, request=ioc))}
-    
-    # Print or return the formatted report
-    print(formatted_report)
+
+    if result:
+        # Process and format the result
+        formatted_report = format_borealis_report(result, ioc_type, request=ioc)
+        
+        # Print or return the formatted report
+        print(formatted_report)
+    else:
+        print(f"DEBUG: No Borealis report received for {ioc}")

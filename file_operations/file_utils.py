@@ -1,5 +1,6 @@
 import re
 import os
+import sys
 import json
 
 def ensure_directory_exists(directory):
@@ -35,11 +36,17 @@ def write_to_file(file_name, data, category=None):
 
 def clean_input(content):
     print('\nCleaning input.')
+    # First replace defanged elements with the correct ones
     content = content.replace('[.]', '.')
     content = content.replace('hxxp', 'http')
     content = content.replace('hxxps', 'https')
     content = content.replace('[:]', ':')
-    content = re.sub(r':\d+/?', '', content)
+    content = re.sub(r':\d+/?', '', content)  # Remove port numbers if present
+
+    # Additionally, we can check if there is a defanged IP pattern to refang it
+    defanged_ip_pattern = r'\[\.\]'  # Pattern for defanged IP
+    content = re.sub(defanged_ip_pattern, '.', content)
+
     return content
 
 def sanitize_and_defang(data, defang=True):
@@ -74,7 +81,14 @@ def is_ip(s):
     return re.match(r"^\d{1,3}(\.\d{1,3}){3}$", s) is not None
 
 def is_url(s):
-    return re.match(r"(https?://)?[a-zA-Z0-9-]+(\.[a-zA-Z]{2,})+", s) is not None
+    # Updated regular expression to handle subdomains, regions, and complex domains
+    return re.match(r"^https?:\/\/([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/[\w\-._~:/?#[\]@!$&'()*+,;=]*)?$", s) is not None
 
 def is_hash(s):
     return re.match(r"^[a-fA-F0-9]{32}$|^[a-fA-F0-9]{40}$|^[a-fA-F0-9]{64}$", s) is not None
+
+def is_domain(s):
+    """
+    Check if a given string is a valid domain name.
+    """
+    return re.match(r"^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$", s) is not None
