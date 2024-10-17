@@ -2680,7 +2680,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
             print(f"DEBUG: IOC: {ioc[0]}, Score: {ioc[1]}, Verdict: {ioc[3]}")
     
     # First, filter the ioc_scores to only include IOCs with verdict "Malicious"
-    malicious_ioc_scores = [ioc for ioc in ioc_scores if ioc[3] == 'Malicious' or 'Probably Malicious']
+    malicious_ioc_scores = [ioc for ioc in ioc_scores if ioc[3] in ['Malicious', 'Probably Malicious']]
     
     # Only display top malicious IOCs if 2 or more malicious IOCs are scanned
     if len(malicious_ioc_scores) >= 2:
