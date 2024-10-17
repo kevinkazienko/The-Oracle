@@ -47,7 +47,7 @@ from api.api_keys import censys_api_key, censys_secret, metadefender_api_key
 from api_interactions.borealis import request_borealis, format_borealis_report
 from api_interactions.binaryedge import get_binaryedge_report
 from api_interactions.metadefender import analyze_with_metadefender, process_metadefender_ip_report, process_metadefender_url_report, process_metadefender_hash_report
-from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan 
+from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report
 from api_interactions.malshare import get_malshare_hash_report
 
 # Configure logging to file
@@ -93,7 +93,7 @@ def start_validation(output_to_file, raw_input=None, file_input=None, file_name_
     if not iocs:
         print("Error: No valid IOCs found.")
         return "Error: No valid IOCs found."
-    
+
 
     # Function to classify the IOC based on the detected pattern
 def classify_ioc(ioc):
@@ -108,7 +108,6 @@ def classify_ioc(ioc):
         return 'hash'
     else:
         return 'unknown'
-
 
     # Classify IOCs using classify_ioc function
     ioc_dict = {'ips': [], 'urls': [], 'domains': [], 'hashes': []}
@@ -1347,8 +1346,8 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
 
             # Hybrid Analysis parsing
             hybrid_analysis_report = reports.get("Hybrid-Analysis", {})
-            if 'Hybrid-Analysis' in reports:
-                report_hybrid_analysis = reports['Hybrid-Analysis']
+            if isinstance(hybrid_analysis_report, dict):  # Ensure it's a dictionary
+                report_hybrid_analysis = hybrid_analysis_report
                 if report_hybrid_analysis:
                     # Extract necessary fields directly from the report_hybrid_analysis
                     file_name = report_hybrid_analysis.get("submit_name", report_hybrid_analysis.get("file_name", "N/A"))
@@ -1357,11 +1356,11 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                         threat_score = 0  # Default to 0 if no threat score is available
                         
                     verdict = report_hybrid_analysis.get("verdict", "N/A")
-                    classification_tags = ', '.join(report_hybrid_analysis.get("classification_tags", [])) if report_hybrid_analysis.get("classification_tags") else "None"
+                    classification_tags = ''.join(report_hybrid_analysis.get("classification_tags", [])) if report_hybrid_analysis.get("classification_tags") else "None"
                     vx_family = report_hybrid_analysis.get("vx_family", "N/A")
                     total_processes = report_hybrid_analysis.get("total_processes", 0)
                     total_network_connections = report_hybrid_analysis.get("total_network_connections", 0)
-            
+                    
                     # Process MITRE ATT&CK data
                     mitre_attcks = report_hybrid_analysis.get("mitre_attcks", [])
 
@@ -1370,9 +1369,11 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                             [f"{attack.get('tactic', 'N/A')} - {attack.get('technique', 'N/A')} (ID: {attack.get('attck_id', 'N/A')})"
                              for attack in mitre_attcks]
                         )
+                    elif isinstance(mitre_attcks, str):
+                        mitre_attcks_str = mitre_attcks  # If it's already a string, use it directly
                     else:
                         mitre_attcks_str = "None"
-            
+                    
                     # Scale threat score and add to total score
                     ha_score = threat_score * 0.7  # Scale to a maximum of 70
                     total_score += min(ha_score, max_scores.get("Hybrid-Analysis", 70))
@@ -1387,8 +1388,8 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                                            f"  Total Processes: {total_processes}\n"
                                            f"  Total Network Connections: {total_network_connections}\n"
                                            f"  MITRE ATT&CK Tactics: {mitre_attcks_str}\n")
-                else:
-                    score_breakdown.append("Hybrid Analysis: No data available")
+            else:
+                score_breakdown.append("Hybrid Analysis: No data available")
 
 
 
@@ -2599,43 +2600,27 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
                     # Hybrid Analysis report
                     if report_hybrid_analysis:
-                        combined_report += f"Hybrid-Analysis Report:\n"
-                        
-                        # Directly use the parsed and formatted data from the Hybrid Analysis script
-                        file_name = report_hybrid_analysis.get("file_name", "N/A")
-                        file_type = report_hybrid_analysis.get("file_type", "N/A")
-                        file_size = report_hybrid_analysis.get("file_size", "N/A")
-                        verdict = report_hybrid_analysis.get("verdict", "N/A")
-                        threat_score = report_hybrid_analysis.get("threat_score", "N/A")
-                        classification_tags = report_hybrid_analysis.get("classification_tags", "N/A")
-                        vx_family = report_hybrid_analysis.get("vx_family", "N/A")
-                        mitre_attcks_str = report_hybrid_analysis.get("mitre_attcks_str", "None")  # Already formatted in HybridAnalysis script
-                        total_processes = report_hybrid_analysis.get("total_processes", 0)
-                        total_network_connections = report_hybrid_analysis.get("total_network_connections", 0)
-                        certificates_str = report_hybrid_analysis.get("certificates_str", "None")  # Already formatted in HybridAnalysis script
+                        #print(f"DEBUG: Hybrid Analysis report type: {type(report_hybrid_analysis)}")
+                        #print(f"DEBUG: Hybrid Analysis report content: {report_hybrid_analysis}")
                     
-                        # Extract signature info (if needed separately)
-                        signature_status = report_hybrid_analysis.get("signature_status", "N/A")
-                        signature_signer = report_hybrid_analysis.get("signature_signer", "N/A")
-                        signature_valid = report_hybrid_analysis.get("signature_valid", "N/A")
-                    
-                        # Append Hybrid Analysis data to the combined report
-                        combined_report += (
-                            f"  - Hash: {sanitize_and_defang(entry)}\n"
-                            f"  - File Name: {file_name}\n"
-                            f"  - File Type: {file_type}\n"
-                            f"  - File Size: {file_size} bytes\n"
-                            f"  - Verdict: {verdict}\n"
-                            f"  - Threat Score: {threat_score}\n"
-                            f"  - Classification Tags: {classification_tags}\n"
-                            f"  - Family: {vx_family}\n"
-                            f"  - Total Processes: {total_processes}\n"
-                            f"  - Total Network Connections: {total_network_connections}\n"
-                            f"  - MITRE ATT&CK Tactics:\n {mitre_attcks_str}\n"
-                            f"  - Certificates:\n    {certificates_str}\n"
-                            f"  - Signature Info:\n    - Status: {signature_status}\n    - Signer: {signature_signer}\n    - Valid: {signature_valid}\n\n"
-                        )
+                        if isinstance(report_hybrid_analysis, list):  # Handle multiple reports
+                            parsed_report = parse_hybrid_analysis_report(report_hybrid_analysis)  # Now it selects only one report
+                            if parsed_report:
+                                combined_report += print_hybrid_analysis_report(parsed_report)
+                            else:
+                                combined_report += "Hybrid-Analysis Report: N/A\n\n"
+                        elif isinstance(report_hybrid_analysis, dict):  # Single report case
+                            #print(f"DEBUG: Processing single report: {report_hybrid_analysis}")
+                            parsed_report = parse_hybrid_analysis_report(report_hybrid_analysis)
+                            if parsed_report:
+                                combined_report += print_hybrid_analysis_report(parsed_report)
+                            else:
+                                combined_report += "Hybrid-Analysis Report: N/A\n\n"
+                        else:
+                            print(f"Unexpected type for Hybrid Analysis report: {type(report_hybrid_analysis)}")
+                            combined_report += "Hybrid-Analysis Report: N/A\n\n"
                     else:
+                        print("DEBUG: No Hybrid-Analysis report found")
                         combined_report += "Hybrid-Analysis Report: N/A\n\n"
 
 
