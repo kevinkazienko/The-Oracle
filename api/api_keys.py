@@ -1,4 +1,4 @@
-#API keys for VirusTotal, MalwareBazaar and AbuseIPDB
+#API keys for VirusTotal, MalwareBazaar, etc
 
 virus_total_api_key = '<placeholder>'
 malwarebazaar_api_key = '<placeholder>'
@@ -10,3 +10,8 @@ greynoise_api_key = '<placeholder>'
 urlscan_api_key = '<placeholder>'
 censys_api_key = '<placeholder>'
 censys_secret = '<placeholder>'
+binaryedge_api_key = '<placeholder>'
+metadefender_api_key = '<placeholder>'
+hybridanalysis_api_key = '<placeholder>'
+hybridanalysis_secret = '<placeholder>'
+malshare_api_key = '<placeholder>'
