@@ -64,14 +64,15 @@ The Oracle is designed for security analysts, researchers and enthusiasts - faci
 
 1. **Clone the Repository**: 
 
-    First, clone the repository to your local machine:
+   * Download the zip archive to your system
+   * Upload the zip archive to your Jupyhub U (Unclassified) instance <b><u><i> NOT PB</b></u></i>
+   * Once the archive is uploaded, open a new tab and select Terminal
+   * From the Terminal, type the following command  
+   ``unzip The-Oracle-main.zip``
+   
+    
 
-    ```bash
-    git clone https://github.com/kevinkazienko/The-Oracle.git
-    cd The-Oracle
-    ```
-
-2. **Install Dependencies**: <i> Typically not required</i>
+<!-- 2. **Install Dependencies**: <i> Typically not required</i>
 
     If you haven't installed the `requests` library, you can do so by running:
 
@@ -84,24 +85,15 @@ The Oracle is designed for security analysts, researchers and enthusiasts - faci
    ```bash
    pip install -r requirements.txt
    ```
-   It will install requirements to run this script.
+   It will install requirements to run this script. -->
 
 ## Set Up
 
 ### API Keys Configuration
 
-The script requires API keys for VirusTotal, MalwareBazaar, and AbuseIPDB. Replace the API keys in the `api/api_keys.py`  with your own obtained from VirusTotal, MalwareBazaar, AbuseIPDB and other sources. Follow these steps to configure them:
+The script requires API keys for all validation sources. CCCS (Canadian Center for Cyber Security) has an enterprise subscription to several of them including VirusTotal, Censys and Shodan. You'll need to figure out getting your account added to the subscription or just use your work email to create an account and work with the "personal" api key you receive (<i>may limit results</i>). MalwareBazaar, AbuseIPDB, etc are fine to use personal API keys. 
 
-1. **Obtain API Keys**:
-   
-   - Register and obtain an API key from [VirusTotal](https://www.virustotal.com/).
-   - Do the same for [MalwareBazaar](https://bazaar.abuse.ch/) and [AbuseIPDB](https://www.abuseipdb.com/).
-
-2. **Configure the Script**:
-
-   - Open the `api/api_keys.py` file in a text editor.
-   - First three lines are for API keys [VirusTotal, MalwareBazaar and AbuseiPDB].
-   - Replace the placeholder values with your actual API keys.
+Replace the placeholders with your actual API keys in the `api/api_keys.py`.
 
 ### Usage
 
