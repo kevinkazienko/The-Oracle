@@ -41,16 +41,23 @@ def request_borealis(request, ioc_type, modules=None, print_response=True, print
     # Debugging: Show which modules are being used
     print(f"DEBUG: Selected modules for {ioc_type} = {selected_modules}")
 
-    response = requests.get(f"{BOREALIS_HOST}/process/{request}?modules={selected_modules}&ioc_type={ioc_type}")
+    try:
+        response = requests.get(f"{BOREALIS_HOST}/process/{request}?modules={selected_modules}&ioc_type={ioc_type}")
 
-    if response.ok:
-        jresponse = response.json()
-        print(f"DEBUG: Borealis report on {request} has been received.")
-    else:
-        print(f"ERROR: Borealis server did not return 200 OK response. Status code: {response.status_code}")
+        if response.status_code == 503:
+            print(f"ERROR: Borealis server returned 503 Service Unavailable. Skipping Borealis report for {request}.")
+            return None  # Skip Borealis processing if 503 is encountered
+
+        if response.ok:
+            jresponse = response.json()
+            print(f"DEBUG: Borealis report on {request} has been received.")
+            return jresponse
+        else:
+            print(f"ERROR: Borealis server did not return 200 OK response. Status code: {response.status_code}")
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Exception during Borealis request: {e}")
         return None
-
-    return jresponse
 
 # Format Borealis report
 def format_borealis_report(report, ioc_type, request):
