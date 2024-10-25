@@ -52,6 +52,8 @@ The Oracle is designed for security analysts, researchers and enthusiasts - faci
 - **Input Sanitization**: Enhanced input processing to remove unnecessary port numbers and other artifacts. [12/03/2023]
 - **Report Output Defanging**: Enhanced output reporting with IP and domain/URL de-weaponizing.
 - **Automatic IOC Type Detection**: The script now automatically detects the type of IOC being searched.
+- **Search CVE's With Shodan**: Search for devices vulnerable to CVE's using Shodan's vuln filter. [10/25/2024]
+- **Search Organizations With Shodan**: Search Shodan using the org filter. [10/25/2024]
 
 ## Getting Started
 
