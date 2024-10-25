@@ -92,3 +92,16 @@ def is_domain(s):
     Check if a given string is a valid domain name.
     """
     return re.match(r"^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$", s) is not None
+
+# Check for a valid CVE format (e.g., CVE-YYYY-NNNN)
+def is_cve(input_text):
+    return re.match(r'^CVE-\d{4}-\d{4,7}$', input_text.strip()) is not None
+
+
+def is_org(s):
+    """
+    Check if the input string matches typical organization naming conventions.
+    For simplicity, we assume organization names contain alphanumeric characters, spaces, and a few special characters.
+    This regex can be refined depending on your dataset.
+    """
+    return re.match(r"^[a-zA-Z0-9&\s.,\-']+$", s.strip()) is not None

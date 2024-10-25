@@ -43,7 +43,18 @@ def get_urlscan_report(uuid, retries=10, delay=20, status_output=None, progress_
         if response.status_code == 200:
             report = response.json()
 
-            # Check if meta.processors.asn.data is a list and handle it accordingly
+            # Check if the domain is resolving by inspecting multiple indicators
+            domain = report.get('page', {}).get('domain', None)
+            url = report.get('page', {}).get('url', None)
+            ip = report.get('page', {}).get('ip', None)
+
+            resolving = domain is not None and url is not None and ip is not None
+
+            if not resolving:
+                print("DEBUG: Domain is not resolving.")
+                return {"Resolving": False}
+
+            # Extract ASN and ISP data
             asn_data = report.get('meta', {}).get('processors', {}).get('asn', {}).get('data', [])
             if isinstance(asn_data, list) and len(asn_data) > 0:
                 asn = asn_data[0].get('asn', 'N/A')
@@ -55,9 +66,7 @@ def get_urlscan_report(uuid, retries=10, delay=20, status_output=None, progress_
             # Extract the screenshot URL
             screenshot_url = report.get('task', {}).get('screenshotURL', 'N/A')
 
-            # Check for domain resolving status
-            resolving = report.get('page', {}).get('domain', None) is not None
-
+            # Return the parsed data
             data = {
                 'URL': report.get('page', {}).get('url', 'N/A'),
                 'Domain': report.get('page', {}).get('domain', 'N/A'),
@@ -72,7 +81,7 @@ def get_urlscan_report(uuid, retries=10, delay=20, status_output=None, progress_
                 'TLS Age (days)': report.get('page', {}).get('tlsAgeDays', 'N/A'),
                 'TLS Validity (days)': report.get('page', {}).get('tlsValidDays', 'N/A'),
                 'Redirected': report.get('page', {}).get('redirected', 'N/A'),
-                'Screenshot URL': screenshot_url,  # Added screenshot URL
+                'Screenshot URL': screenshot_url,
                 'Resolving': resolving,  # Set the resolving status
                 'Last Analysis Date': report.get('task', {}).get('time', 'N/A')
             }

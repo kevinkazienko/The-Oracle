@@ -20,7 +20,9 @@ from file_operations.file_utils import (
     write_to_file,
     clean_input,
     sanitize_and_defang,
-    is_domain
+    is_domain,
+    is_cve,
+    is_org
 )
 from api_interactions.virustotal import (
     get_ip_report,
@@ -34,7 +36,7 @@ from api_interactions.virustotal import (
     submit_domain_for_rescan,
     submit_hash_for_rescan
 )
-from api_interactions.shodan import get_shodan_report
+from api_interactions.shodan import get_shodan_report, search_shodan_cve_country, search_shodan_product_country, search_shodan_org
 from api_interactions.alienvault import get_alienvault_report
 from api_interactions.ipqualityscore import get_ipqualityscore_report, parse_ipqualityscore_report
 from api_interactions.greynoise import get_greynoise_report
@@ -65,37 +67,8 @@ def safe_join(separator, items):
         return str(item)  # Ensure all other types are strings
     
     return separator.join(stringify(item) for item in items)
-        
 
-def start_validation(output_to_file, raw_input=None, file_input=None, file_name_input=None, progress_bar=None, status_output=None):
-    output_file_path = None
-
-    # Determine if output should be saved to a file
-    if output_to_file:
-        output_file_path = "output_files/output.txt"  # Define the output file location or modify based on input
-
-    # Initialize an empty list for IOCs
-    iocs = []
-
-    # Handling raw input (comma-separated or single)
-    if raw_input:
-        print(f"DEBUG: Raw input before refanging:\n{raw_input}")
-        cleaned_input = sanitize_and_defang(raw_input, defang=False)
-        print(f"DEBUG: Input after refanging:\n{cleaned_input}")
-        iocs = [ioc.strip() for ioc in cleaned_input.split(',') if ioc.strip()]  # Split on commas for comma-separated values
-
-    # Handling file input (uploaded or dropdown selected file content)
-    if file_input:
-        print(f"DEBUG: File content provided:\n{file_input}")
-        iocs = [ioc.strip() for ioc in file_input.splitlines() if ioc.strip()]  # Split into individual IOCs
-
-    # Proceed only if IOCs are found
-    if not iocs:
-        print("Error: No valid IOCs found.")
-        return "Error: No valid IOCs found."
-
-
-    # Function to classify the IOC based on the detected pattern
+# Function to classify the IOC based on the detected pattern
 def classify_ioc(ioc):
     ioc = ioc.strip()  # Clean up whitespace
     if is_ip(ioc):
@@ -106,45 +79,10 @@ def classify_ioc(ioc):
         return 'domain'
     elif is_hash(ioc):
         return 'hash'
+    elif is_cve(ioc):  # Detect if the input is a CVE
+        return 'cve'
     else:
         return 'unknown'
-
-    # Classify IOCs using classify_ioc function
-    ioc_dict = {'ips': [], 'urls': [], 'domains': [], 'hashes': []}
-    for ioc in iocs:
-        ioc_type = classify_ioc(ioc)  # Use the classify_ioc function
-        if ioc_type != 'unknown':
-            # Handle the plural case for "hash"
-            if ioc_type == "hash":
-                ioc_dict['hashes'].append(ioc)
-            else:
-                ioc_dict[f'{ioc_type}s'].append(ioc)
-
-    # Filter out empty categories
-    ioc_dict = {k: v for k, v in ioc_dict.items() if v}
-
-    if not ioc_dict:
-        print("Error: No valid IOCs found.")
-        return "Error: No valid IOCs found."
-
-    print(f"DEBUG: Starting analysis with IOCs = {ioc_dict}")
-
-    # Display progress bar before starting analysis
-    if progress_bar and status_output:
-        with status_output:
-            clear_output()
-            display(HTML('<b>Performing analysis...</b>'))
-            display(progress_bar)
-
-    # Proceed with analysis, passing ioc_dict as selected_category
-    aggregated_report = analysis(ioc_dict, output_file_path=output_file_path, progress_bar=progress_bar, status_output=status_output)
-
-    # Save output to file if specified
-    if output_to_file:
-        with open(output_file_path, "a") as outfile:
-            outfile.write(aggregated_report)
-
-    return aggregated_report
 
 def auto_detect_ioc_type(iocs):
     if iocs['ips']:
@@ -153,12 +91,16 @@ def auto_detect_ioc_type(iocs):
         return 'url'
     elif iocs['hashes']:
         return 'hash'
+    elif iocs['cves']:  # Detect CVEs
+        return 'cve'
+    elif iocs['orgs']:  # Detect Organizations
+        return 'org'
     else:
         return 'unknown'
 
 
 def parse_bulk_iocs(content):
-    iocs = {'ips': [], 'urls': [], 'domains': [], 'hashes': []}
+    iocs = {'ips': [], 'urls': [], 'domains': [], 'hashes': [], 'cves': [], 'orgs': []}
     if not content:
         return iocs
     for line in content.splitlines():
@@ -172,6 +114,10 @@ def parse_bulk_iocs(content):
                 iocs['domains'].append(line)
             elif is_hash(line):
                 iocs['hashes'].append(line)
+            elif is_cve(line):  # Detect CVEs
+                iocs['cves'].append(line)
+            elif is_org(line):  # Detect organizations
+                iocs['orgs'].append(line)
             else:
                 print(f"Sorry, we were unable to recognize IOC format: {line}")
     return iocs
@@ -580,6 +526,14 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     breakdown_str = ""
     signature_info = {}
     malicious_sources = 0
+
+
+    # Debugging to check Borealis report status
+    if borealis_report is None:
+        print("DEBUG: Borealis report is None, skipping Borealis module processing.")
+    else:
+        print("DEBUG: Borealis report received, proceeding with module extraction.")
+        
      # Ensure status_output is passed if needed for VirusTotal
     if status_output is None:
         status_output = []  # Default to an empty list or appropriate default object
@@ -593,7 +547,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
         "IPQualityScore": 5,  # Fraud score maxes out at 100
         "MalwareBazaar": 25,  # Based on downloads, origin country, and intelligence
         "URLScan": 10,  # Malicious score maxes out at 100
-        "Shodan": 0,  # Shodan does not contribute to score, only used for trusted provider detection
+        "Shodan": 100,  # Shodan does not contribute to score, only used for trusted provider detection
         "BinaryEdge": 5,
         "MetaDefender": 5,
         "AUWL": 5,
@@ -609,9 +563,11 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     if ioc_type == "ip":
         max_possible_score = max_scores["VirusTotal"] + max_scores["AbuseIPDB"] + max_scores["AlienVault"] + max_scores["GreyNoise"] + max_scores["IPQualityScore"] + max_scores["BinaryEdge"] + max_scores["MetaDefender"] + max_scores["STONEWALL"]
     elif ioc_type in ["url", "domain"]:
-        max_possible_score = max_scores["VirusTotal"] + max_scores["AlienVault"] + max_scores["IPQualityScore"] + max_scores["URLScan"] + max_scores["AUWL"] + max_scores["BinaryEdge"] + max_scores["MetaDefender"] + max_scores["ALPHABETSOUP"] + max_scores["TOP1MILLION"] + max_scores["STONEWALL"]
+        max_possible_score = max_scores["VirusTotal"] + max_scores["AlienVault"] + max_scores["IPQualityScore"] + max_scores["URLScan"] + max_scores["BinaryEdge"] + max_scores["MetaDefender"] + max_scores["ALPHABETSOUP"] + max_scores["TOP1MILLION"] + max_scores["STONEWALL"] + max_scores["AUWL"]
     elif ioc_type == "hash":
         max_possible_score = max_scores["VirusTotal"] + max_scores["AlienVault"] + max_scores["MalwareBazaar"] + max_scores["MetaDefender"] + max_scores["Hybrid-Analysis"]
+    elif ioc_type == "cve":
+        max_possible_score = max_scores["Shodan"]
     else:
         max_possible_score = 0  # If the IOC type is unknown, max score is set to 0
 
@@ -631,9 +587,15 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
 
     # Extract Borealis report details
     borealis_breakdown = ""
-    if borealis_report:
-        borealis_breakdown, borealis_score = extract_borealis_info(borealis_report)
-        total_score += borealis_score  # Add Borealis score to the total score
+    if borealis_report and isinstance(borealis_report, dict):
+        try:
+            borealis_breakdown, borealis_score = extract_borealis_info(borealis_report)
+            total_score += borealis_score
+            # score_breakdown.append(f"Borealis Report:\n{borealis_breakdown}")
+        except Exception as e:
+            print(f"DEBUG: Skipping Borealis report due to error during extraction: {e}")
+    else:
+        print("DEBUG: Borealis report is None or not a valid dictionary, skipping Borealis processing.")
         #vendor_contributions["Borealis"] = borealis_score
 
     # Adjusted weight thresholds for malicious and suspicious counts
@@ -897,15 +859,17 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                 score_breakdown.append(f"Borealis Report:\n{borealis_breakdown}")
 
             # Stonewall parsing (approval for blocking)
-            if "Stonewall" in borealis_report:
-                stonewall_report = borealis_report["Stonewall"]
+            if "STONEWALL" in borealis_report:
+                stonewall_report = borealis_report.get("STONEWALL", {})
                 approved_for_blocking = stonewall_report.get("approved", False)
                 if approved_for_blocking:
-                    total_score += max_scores["Stonewall"]
+                    total_score += max_scores["STONEWALL"]
                     malicious_count += 1
                     score_breakdown.append(f"Stonewall: Approved for blocking (malicious)")
                 else:
                     score_breakdown.append("Stonewall: Not approved for blocking")
+            else:
+                score_breakdown.append("Stonewall: No relevant data found.")
 
         # URL and Domain-based IOC
         elif ioc_type in ["url", "domain"]:
@@ -1099,69 +1063,51 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
 
 
             # AUWL Section
-            auwl_report = borealis_report.get("AUWL", [])
-            if isinstance(auwl_report, list) and auwl_report:
+            if "AUWL" in borealis_report:
+                auwl_report = borealis_report.get("AUWL", [])
                 phishing_count = 0
                 total_auwl_clusters = len(auwl_report)
-            
-                # Iterate over the AUWL clusters and check for malicious categories
                 for cluster in auwl_report:
                     cluster_name = cluster.get('clusterName', 'N/A')
                     cluster_category = cluster.get('clusterCategory', 'N/A')
-                    cluster_url = cluster.get('url', 'N/A')
-            
-                    # If the category is 'phishing' or other malicious types, count it as malicious
                     if cluster_category.lower() == "phishing":
                         phishing_count += 1
-            
-                    # Add cluster information to the breakdown
-                    score_breakdown.append(f"  AUWL Cluster: {cluster_name}\n    Category: {cluster_category}\n    URL: {cluster_url}")
-            
-                # Cap the score contribution from AUWL at 200, distribute proportionally
-                max_auwl_score = 200
-                if total_auwl_clusters > 0:
-                    # Calculate score per phishing cluster
-                    score_per_cluster = max_auwl_score / total_auwl_clusters  
-                    auwl_score = phishing_count * score_per_cluster
-                    auwl_score = min(auwl_score, max_auwl_score)  # Ensure AUWL score does not exceed the max score of 200
-            
-                    total_sources += 1
-                    if phishing_count > 0:
-                        malicious_count += phishing_count
-                        total_score += int(auwl_score)
-                        
-            
-                score_breakdown.append(f"  AUWL Total Clusters: {total_auwl_clusters}\n  Phishing Clusters Detected: {phishing_count}\n  AUWL Score: {int(auwl_score)}")
+                    score_breakdown.append(f"AUWL Cluster: {cluster_name}, Category: {cluster_category}")
+                total_score += phishing_count * max_scores["AUWL"]
+                malicious_count += phishing_count
             else:
                 score_breakdown.append("AUWL: No relevant data found.")
 
 
             # AlphabetSoup parsing (DGA detection)
             if "ALPHABETSOUP" in borealis_report:
-                alphabet_soup_report = borealis_report["AlphabetSoup"]
-                dga_detected = alphabet_soup_report.get("dga_detected", False)
+                alphabetsoup_report = borealis_report.get("ALPHABETSOUP", {})
+                dga_detected = alphabetsoup_report.get("dga_detected", False)
                 if dga_detected:
-                    total_score += max_scores["AlphabetSoup"]
+                    total_score += max_scores["ALPHABETSOUP"]
                     malicious_count += 1
                     score_breakdown.append(f"AlphabetSoup: DGA Detected (malicious)")
                 else:
-                    score_breakdown.append(f"AlphabetSoup: No DGA detected")
+                    score_breakdown.append("AlphabetSoup: No DGA detected")
+            else:
+                score_breakdown.append("AlphabetSoup: No relevant data found.")
         
             # Top1M parsing (Majestic, Tranco, Cisco block detection)
             if "TOP1MILLION" in borealis_report:
-                top1m_report = borealis_report["TOP1MILLION"]
+                top1m_report = borealis_report.get("TOP1MILLION", {})
                 blocked_by = top1m_report.get("blocked_by", [])
                 if blocked_by:
-                    top1m_score = min(len(blocked_by) * 20, max_scores["TOP1MILLION"])
-                    total_score += top1m_score
+                    total_score += min(len(blocked_by) * 20, max_scores["TOP1MILLION"])
                     malicious_count += 1
-                    score_breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)} (score: {top1m_score})")
+                    score_breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)}")
                 else:
                     score_breakdown.append("Top1M: Not blocked by Majestic, Tranco, or Cisco")
+            else:
+                score_breakdown.append("Top1M: No relevant data found.")
         
             # Stonewall parsing (approval for blocking)
             if "STONEWALL" in borealis_report:
-                stonewall_report = borealis_report["STONEWALL"]
+                stonewall_report = borealis_report.get("STONEWALL", {})
                 approved_for_blocking = stonewall_report.get("approved", False)
                 if approved_for_blocking:
                     total_score += max_scores["STONEWALL"]
@@ -1169,6 +1115,8 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                     score_breakdown.append(f"Stonewall: Approved for blocking (malicious)")
                 else:
                     score_breakdown.append("Stonewall: Not approved for blocking")
+            else:
+                score_breakdown.append("Stonewall: No relevant data found.")
 
         # Hash-based IOC
         elif ioc_type == "hash":
@@ -1391,6 +1339,72 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
             else:
                 score_breakdown.append("Hybrid Analysis: No data available")
 
+        elif ioc_type == "cve":
+            shodan_report = reports.get("Shodan", {})
+            
+            # Ensure the Shodan report is a dictionary
+            if isinstance(shodan_report, dict):
+                total_cve_score = 0
+                cve_results = shodan_report.get("matches", [])
+        
+                # Debugging the extracted matches
+                print(f"DEBUG: Shodan report matches: {cve_results}")
+        
+                # Extract facets for reporting
+                facets = shodan_report.get("facets", {})
+                if facets:
+                    score_breakdown.append("Shodan CVE Facet Information:")
+                    for key, values in facets.items():
+                        if isinstance(values, list) and values:
+                            # Extract the first facet item for reporting purposes
+                            facet_value = values[0]
+                            value_name = facet_value.get("value", "Unknown")
+                            count = facet_value.get("count", 0)
+                            score_breakdown.append(f"  {key.capitalize()}: {value_name} (Count: {count})")
+        
+                # Ensure cve_results is a list and contains data
+                if isinstance(cve_results, list) and cve_results:
+                    score_breakdown.append("Shodan CVE Report:\n  Found CVE entries.")
+        
+                    for match in cve_results:
+                        if isinstance(match, dict):
+                            vulns = match.get('vulns', {})  # Access 'vulns' inside each 'match'
+        
+                            if isinstance(vulns, dict):
+                                for cve_id, details in vulns.items():  # Iterate over CVEs in 'vulns'
+                                    if isinstance(details, dict):
+                                        cvss_score = details.get('cvss', 'N/A')
+        
+                                        # Debug: Print the CVE ID and CVSS Score
+                                        print(f"DEBUG: CVE: {cve_id}, CVSS Score: {cvss_score}")
+        
+                                        # If CVSS score is valid, add to total score
+                                        if isinstance(cvss_score, (int, float)):
+                                            total_cve_score += cvss_score
+                                            score_breakdown.append(f"  CVE: {cve_id}, CVSS Score: {cvss_score}")
+                                        else:
+                                            score_breakdown.append(f"  CVE: {cve_id}, CVSS Score: Not Available")
+                                    else:
+                                        score_breakdown.append(f"Invalid format for CVE {cve_id}. Expected a dictionary.")
+                            else:
+                                score_breakdown.append("Invalid 'vulns' format, expected a dictionary.")
+                        else:
+                            score_breakdown.append("Invalid match format: Expected a dictionary")
+        
+                    # Cap the total CVE score at 100
+                    total_score = min(total_cve_score, 100)
+                    print(f"DEBUG: Capped Total Score: {total_score}")
+                    score_breakdown.append(f"  Total CVSS Score: {total_cve_score} (Capped at 100)")
+                else:
+                    score_breakdown.append("Shodan CVE Report: No CVSS scores found or invalid data format")
+            else:
+                score_breakdown.append("Shodan CVE Report: No valid report data")
+        
+            # Set the verdict based on the CVE score
+            if total_score >= 100:
+                verdict = "Malicious"
+            else:
+                verdict = "Not Malicious"
 
 
         # Final score scaling: Scale total score to 100
@@ -1467,6 +1481,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
         
         return total_score, breakdown_str, verdict
 
+        pass
     except Exception as e:
         print(f"ERROR: Exception encountered during score calculation: {str(e)}")
         return 0, f"Error during score calculation: {str(e)}", "Unknown"
@@ -1678,8 +1693,9 @@ def extract_borealis_info(borealis_report):
 
 
 
-def analysis(selected_category, output_file_path=None, progress_bar=None, status_output=None):
+def analysis(selected_category, output_file_path=None, progress_bar=None, status_output=None, selected_country=None):
     print(f"DEBUG: analysis function started with selected_category = {selected_category}")
+    print(f"DEBUG: selected_country passed to analysis = {selected_country}")
     individual_combined_reports = {}
     ioc_scores = []
     tags = 'N/A'
@@ -1697,22 +1713,14 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
         print("DEBUG: selected_category is None")
         return "Error: selected_category is None"
 
-    # Handle category-specific processing and ensure all IOC types are present
-    # if 'ips' not in selected_category:
-    #     print("DEBUG: 'ips' not found in selected_category, initializing empty list for 'ips'")
-    #     selected_category['ips'] = []
-    # if 'urls' not in selected_category:
-    #     print("DEBUG: 'urls' not found in selected_category, initializing empty list for 'urls'")
-    #     selected_category['urls'] = []
-    # if 'hashes' not in selected_category:
-    #     print("DEBUG: 'hashes' not found in selected_category, initializing empty list for 'hashes'")
-    #     selected_category['hashes'] = []
 
     # Handle category-specific processing and ensure all IOC types are present
     selected_category.setdefault('ips', [])
     selected_category.setdefault('urls', [])
     selected_category.setdefault('domains', [])  # Add this line to handle domains
     selected_category.setdefault('hashes', [])
+    selected_category.setdefault('cves', [])
+    selected_category.setdefault('orgs', [])
 
     print(f"DEBUG: Updated selected_category = {selected_category}")
 
@@ -1721,7 +1729,9 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
         len(selected_category['ips']) * 10  # 10 API calls per IP
         + len(selected_category['urls']) * 9  # 9 API calls per URL
         + len(selected_category['domains']) * 9  # 9 API calls per domain (if treated separately from URLs)
-        + len(selected_category['hashes']) * 4  # 4 API calls per hash
+        + len(selected_category['hashes']) * 5  # 4 API calls per hash
+        + len(selected_category['cves']) * 1
+        + len(selected_category['orgs']) * 1
     )
 
     # Initialize the progress bar
@@ -1761,38 +1771,98 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_censys = None
                     report_binaryedge_ip = None
                     report_metadefender_ip = None
-                    
-                    report_vt_ip = get_ip_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_abuseipdb = get_abuseipdb_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_shodan = get_shodan_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_greynoise = get_greynoise_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_censys = get_censys_data(censys_api_key, censys_secret, entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_binaryedge_ip = get_binaryedge_report(entry, ioc_type="ip", status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_metadefender_ip = analyze_with_metadefender(entry, ioc_type="ip", metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+
+                    try:
+                        report_vt_ip = get_ip_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: VirusTotal report failed with error: {e}")
+                        report_vt_ip = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_abuseipdb = get_abuseipdb_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: AbuseIPDB report failed with error: {e}")
+                        report_abuseipdb = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_shodan = get_shodan_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: Shodan report failed with error: {e}")
+                        report_shodan = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: AlienVault report failed with error: {e}")
+                        report_alienvault = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: IPQualityScore report failed with error: {e}")
+                        report_ipqualityscore = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_greynoise = get_greynoise_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: GreyNoise report failed with error: {e}")
+                        report_greynoise = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_censys = get_censys_data(censys_api_key, censys_secret, entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: Censys report failed with error: {e}")
+                        report_censys = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_binaryedge_ip = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: BinaryEdge report failed with error: {e}")
+                        report_binaryedge_ip = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_metadefender_ip = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: MetaDefender report failed with error: {e}")
+                        report_metadefender_ip = None
+                        if progress_bar:
+                            progress_bar.value += 1
                     # Borealis Report
-                    borealis_report = request_borealis(entry, ioc_type="ip", status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    try:
+                        borealis_report = request_borealis(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                                progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: Borealis report failed with error: {e}")
+                        borealis_report = None
+                        if progress_bar:
+                            progress_bar.value += 1
 
 
                     # List of reports to check for trusted provider detection
@@ -1911,6 +1981,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         
                         # Append the report
                         combined_report += f"VirusTotal Report:\n{vt_result}\n"
+                    
     
                     # AbuseIPDB Report
                     if report_abuseipdb and not report_abuseipdb.get("error"):
@@ -1933,6 +2004,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         )
                     else:
                         combined_report += "AbuseIPDB Report:\nN/A\n\n"
+
+                    
     
                     # Shodan Report
                     if report_shodan and isinstance(report_shodan, dict):
@@ -1951,6 +2024,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             combined_report += f"Shodan Report:\n{sanitize_and_defang(shodan_report)}\n\n"
                     else:
                         combined_report += f"Shodan Report:\nN/A\n\n"
+
+                    
     
                     # IPQualityScore Report
                     if isinstance(report_ipqualityscore, str):
@@ -1965,6 +2040,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         country_code = match.group(1) if match else 'N/A'  # Get the country code if it exists
                     else:
                         combined_report += "IPQualityScore Report: No data available\n\n"
+                    
                         
     
                     # AlienVault OTX Report
@@ -1972,6 +2048,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += format_alienvault_report(report_alienvault) + "\n\n"
                     else:
                         combined_report += "AlienVault OTX Report:\nN/A\n\n"
+                    
     
                     # GreyNoise Report
                     if report_greynoise and not report_greynoise.get("error"):
@@ -1987,6 +2064,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += f"  - Last Seen: {last_analysis_date}\n\n"
                     else:
                         combined_report += "GreyNoise Report:\nN/A\n\n"
+                    
     
                     # Censys Report
                     if report_censys:
@@ -2007,6 +2085,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += f"  - Last Updated: {report_censys.get('last_updated', 'N/A')}\n\n"
                     else:
                         combined_report += "Censys Report:\nN/A\n\n"
+                    
 
                     # BinaryEdge Report
                     if report_binaryedge_ip:
@@ -2014,6 +2093,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += f"BinaryEdge Report:\n{sanitize_and_defang(parsed_binaryedge_info)}\n\n"
                     else:
                         combined_report += "BinaryEdge Report:\n  - No relevant data found.\n\n"
+                    
 
                     
                     # MetaDefender Report
@@ -2021,6 +2101,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += f"{sanitize_and_defang(report_metadefender_ip)}\n\n"
                     else:
                         combined_report += "Metadefender Report:\n  - No relevant data found.\n\n"
+                    
 
                     # Format and append the Borealis report to the combined report
                     if borealis_report:
@@ -2028,19 +2109,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += f"{sanitize_and_defang(formatted_borealis_report)}\n\n"
                     else:
                         combined_report += "Borealis Report:\nN/A\n\n"
+            
 
-                    # # Calculate verdict and score breakdown
-                    # total_score, breakdown, verdict = calculate_total_malicious_score(
-                    #     {
-                    #         "VirusTotal": report_vt_ip,
-                    #         "AbuseIPDB": report_abuseipdb,
-                    #         "IPQualityScore": report_ipqualityscore,
-                    #         "GreyNoise": report_greynoise,
-                    #         "AlienVault": report_alienvault,
-                    #     },
-                    #     borealis_report,
-                    #     ioc_type="ip"
-                    # )
                     # combined_report += f"Verdict: {verdict} (Score: {total_score})\n\nScore Breakdown\n{breakdown}\n\n"
                     combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
 
@@ -2059,46 +2129,100 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_ipqualityscore = None
                     report_binaryedge_url = None
                     report_metadefender_url = None
-                
-                    urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    url_id = submit_url_for_analysis(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    if url_id:
-                        time.sleep(16)
-                        report_vt_url = get_url_report(url_id, status_output, progress_bar)
+
+                    try:
+                        urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
                         if progress_bar:
                             progress_bar.value += 1
-                        if urlscan_uuid:
-                            report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
+                    except Exception as e:
+                        print(f"DEBUG: URLScan report failed with error: {e}")
+                        urlscan_uuid = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        url_id = submit_url_for_analysis(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: VirusTotal report failed with error: {e}")
+                        url_id = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: IPQualityScore report failed with error: {e}")
+                        report_ipqualityscore = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: AlienVault report failed with error: {e}")
+                        report_alienvault = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        if url_id:
+                            time.sleep(16)
+                            report_vt_url = get_url_report(url_id, status_output, progress_bar)
                             if progress_bar:
                                 progress_bar.value += 1
-                        else:
-                            report_urlscan = None
-                    report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                    report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: VirusTotal report failed with error: {e}")
+                        report_vt_url = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                        try:
+                            if urlscan_uuid:
+                                report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
+                                if progress_bar:
+                                    progress_bar.value += 1
+                        except Exception as e:
+                            print(f"DEBUG: URLScan report failed with error: {e}")
+                            urlscan_uuid = None
+                            if progress_bar:
+                                progress_bar.value += 1
+                            else:
+                                report_urlscan = None
+                    try:
+                        report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: BinaryEdge report failed with error: {e}")
+                        report_binaryedge_url = None
+                        if progress_bar:
+                            progress_bar.value += 1
+                    try:
+                        report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: MetaDefender report failed with error: {e}")
+                        report_metadefender_url = None
+                        if progress_bar:
+                            progress_bar.value += 1
                 
                     # Check if the domain is resolving
                     if report_urlscan and isinstance(report_urlscan, dict) and not report_urlscan.get('Resolving', True):
                         combined_report += f"URLScan Report:\n  - The domain isn't resolving.\n\n"
                         combined_report += f"Verdict: Not Malicious (Domain Not Resolving)\n\n"
                         continue  # Skip further checks for this URL as it's not resolving
-                
-                    borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                        
+                    try:
+                        borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: Borealis report failed with error: {e}")
+                        borealis_report = None
+                        if progress_bar:
+                            progress_bar.value += 1
 
 
                     # List of reports to check for trusted provider (URLScan, AlienVault, IPQualityScore)
@@ -2261,10 +2385,15 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                 
                     # URLScan Report
                     if report_urlscan and isinstance(report_urlscan, dict):
-                        last_analysis_date = report_urlscan.get('task', {}).get('time', 'N/A')
-                        combined_report += f"URLScan Report:\n"
-                        combined_report += safe_join('\n', [f"  - {key}: {sanitize_and_defang(value)}" for key, value in report_urlscan.items()])
-                        combined_report += "\n"
+                        # Check if the domain is resolving
+                        if not report_urlscan.get('Resolving', True):
+                            combined_report += "URLScan Report:\n  - The domain isn't resolving.\n\n"
+                            combined_report += "Verdict: Not Malicious (Domain Not Resolving)\n\n"
+                            continue  # Skip further checks for this URL as it's not resolving
+                        else:
+                            combined_report += "URLScan Report:\n"
+                            combined_report += safe_join('\n', [f"  - {key}: {sanitize_and_defang(value)}" for key, value in report_urlscan.items()])
+                            combined_report += "\n"
                     else:
                         combined_report += "URLScan Report:\nN/A\n\n"
                 
@@ -2311,33 +2440,69 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_metadefender_hash = None
                     report_hybrid_analysis = None
                     report_malshare = None
-                
-                    report_vt_hash = get_hash_report(entry, status_output, progress_bar)
+
+                    try:
+                        report_vt_hash = get_hash_report(entry, status_output, progress_bar)
                     # print(json.dumps(report_vt_hash, indent=4))
-                    if progress_bar:
-                        progress_bar.value += 1
-                        
-                    report_malwarebazaar = get_malwarebazaar_hash_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                        
-                    report_metadefender_hash = analyze_with_metadefender(entry, ioc_type="hash", metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: VirusTotal report failed with error: {e}")
+                        report_vt_hash = None
+                        if progress_bar:
+                            progress_bar.value += 1
 
+                    try:
+                        report_malwarebazaar = get_malwarebazaar_hash_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: MalwareBazaar report failed with error: {e}")
+                        report_malwarebazaar = None
+                        if progress_bar:
+                            progress_bar.value += 1
+
+                    try:
+                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: AlienVault report failed with error: {e}")
+                        report_alienvault = None
+                        if progress_bar:
+                            progress_bar.value += 1
+
+                    try:
+                        report_metadefender_hash = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: MetaDefender report failed with error: {e}")
+                        report_metadefender_hash = None
+                        if progress_bar:
+                            progress_bar.value += 1
+
+                    try:
                     # Fetch Hybrid Analysis report
-                    report_hybrid_analysis = get_hybrid_analysis_hash_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                        report_hybrid_analysis = get_hybrid_analysis_hash_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: Hybrid-Analysis report failed with error: {e}")
+                        report_hybrid_analysis = None
+                        if progress_bar:
+                            progress_bar.value += 1
 
+                    try:
                     # Fetch Malshare Hash Report
-                    report_malshare = get_malshare_hash_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                        report_malshare = get_malshare_hash_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: Malshare report failed with error: {e}")
+                        report_malshare = None
+                        if progress_bar:
+                            progress_bar.value += 1
                 
                     breakdown_str = ""
                     verdict = "Not Malicious"
@@ -2661,6 +2826,278 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     # Append to scores list for sorting
                     ioc_scores.append((entry, total_score, combined_report, verdict))
                 
+                    # Append the final CVE report
+                    individual_combined_reports[category].append(combined_report)
+
+
+                elif category == "cves":
+                    report_shodan_cve = None
+                
+                    # Fetch the Shodan CVE report
+                    try:
+                        report_shodan_cve = search_shodan_cve_country(entry, selected_country, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                        # Debugging the report retrieved from Shodan
+                        # print(f"DEBUG: Full Shodan CVE Report: {json.dumps(report_shodan_cve, indent=2)}")
+                
+                    except Exception as e:
+                        print(f"DEBUG: Shodan report failed with error: {e}")
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                    combined_report = ""
+                    total_score = 0
+                    breakdown_str = ""
+                    verdict = "Not Malicious"  # Default verdict in case there's no valid result
+                
+                    # Calculate verdict and score breakdown
+                    total_score, score_breakdown, verdict = calculate_total_malicious_score(
+                        {
+                            "Shodan": report_shodan_cve  # Ensure the report is passed correctly
+                        },
+                        None,  # Borealis is not used for CVEs, so pass None
+                        ioc_type="cve"
+                    )
+                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                
+                    # Check if the Shodan CVE report is valid and process accordingly
+                    if report_shodan_cve and isinstance(report_shodan_cve, dict):
+                        facets = report_shodan_cve.get("facets", {})
+                        matches = report_shodan_cve.get("matches", [])
+
+                        # Extract total results from the Shodan report
+                        total_results = report_shodan_cve.get("total", 0)  # Make sure total_results is defined before it's used
+                        
+                        # Extract facet information if available
+                        if facets:
+                            combined_report += f"Shodan Report for {entry}:\n"
+
+                            if total_results:
+                                combined_report += f"  - Total Results: {total_results}\n"
+                            
+                            top_cities = facets.get("city", [])
+                            if top_cities:
+                                combined_report += "  - Top Cities:\n"
+                                for city in top_cities:
+                                    combined_report += f"    - {city.get('value', 'N/A')}: {city.get('count', 'N/A')} occurrences\n"
+                            
+                            top_ports = facets.get("port", [])
+                            if top_ports:
+                                combined_report += "  - Top Ports:\n"
+                                for port in top_ports:
+                                    combined_report += f"    - Port {port.get('value', 'N/A')}: {port.get('count', 'N/A')} occurrences\n"
+                
+                            top_orgs = facets.get("org", [])
+                            if top_orgs:
+                                combined_report += "  - Top Organizations:\n"
+                                for org in top_orgs:
+                                    combined_report += f"    - {org.get('value', 'N/A')}: {org.get('count', 'N/A')} occurrences\n"
+                            
+                            top_products = facets.get("product", [])
+                            if top_products:
+                                combined_report += "  - Top Products:\n"
+                                for product in top_products:
+                                    combined_report += f"    - {product.get('value', 'N/A')}: {product.get('count', 'N/A')} occurrences\n"
+                            
+                            top_os = facets.get("os", [])
+                            if top_os:
+                                combined_report += "  - Top Operating Systems:\n"
+                                for os in top_os:
+                                    combined_report += f"    - {os.get('value', 'N/A')}: {os.get('count', 'N/A')} occurrences\n"
+                            
+                            combined_report += "\n"
+                        else:
+                            combined_report += f"Shodan Report for {entry}:\nNo facet data found.\n\n"
+                        
+                        # Extract and display limited matches
+                        if matches and isinstance(matches, list):
+                            combined_report += "  - Matches:\n"
+                            for match in matches[:10]:  # Limit to 2 matches
+                                ip_str = match.get("ip_str", "N/A")
+                                ports = match.get("port", [])
+                                org = match.get("org", "N/A")
+                                location = match.get("location", {})
+                                city = location.get("city", "N/A")
+                                country = location.get("country_name", "N/A")
+                                vulns = match.get("vulns", {})
+                
+                                combined_report += f"    - IP: {ip_str}\n      - Organization: {org}\n      - City: {city}\n      - Country: {country}\n"
+                                combined_report += f"      - Open Ports: {ports}\n"
+                                
+                                # Include CVEs from the match
+                                if isinstance(vulns, dict):
+                                    for cve_id, details in vulns.items():
+                                        cvss_score = details.get('cvss', 'N/A')
+                                        combined_report += f"       - CVE: {cve_id}\n        - CVSS Score: {cvss_score}\n"
+                                combined_report += "\n"
+                        else:
+                            combined_report += "  - No match data found.\n"
+                    else:
+                        combined_report += f"Shodan Report for {entry}:\nNo results found or invalid report format.\n\n"
+                
+                    # Append score breakdown
+                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+
+                    # Append to scores list for sorting
+                    ioc_scores.append((entry, total_score, combined_report, verdict))
+                
+                    # Append the final CVE report
+                    individual_combined_reports[category].append(combined_report)
+
+
+                elif category == "orgs":
+                    print(f"DEBUG: Found 'orgs' category, proceeding with organization search")
+                    report_shodan_org = None
+                
+                    try:
+                        report_shodan_org = search_shodan_org(entry, status_output=status_output, progress_bar=progress_bar)
+                        print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                    except Exception as e:
+                        print(f"DEBUG: Shodan report failed with error: {e}")
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                    combined_report = ""
+                    total_score = 0
+                    breakdown_str = ""
+                    verdict = "Not Malicious"  # Default verdict in case there's no valid result
+                
+                    # Calculate verdict and score breakdown
+                    total_score, score_breakdown, verdict = calculate_total_malicious_score(
+                        {
+                            "Shodan": report_shodan_org  # Ensure the report is passed correctly
+                        },
+                        None,  # Borealis is not used for Orgs, so pass None
+                        ioc_type="org"
+                    )
+                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                
+                    # Check if the Shodan Org report is valid and process accordingly
+                    if report_shodan_org and isinstance(report_shodan_org, dict):
+                        facets = report_shodan_org.get("facets", {})
+                        matches = report_shodan_org.get("matches", [])
+                        orgs = selected_category.get("orgs", [])
+                
+                        # Extract total results from the Shodan report
+                        total_results = report_shodan_org.get("total", 0)
+                
+                        # Extract facet information if available
+                        if facets:
+                            combined_report += f"Shodan Report for {entry}:\n"
+                
+                            if total_results:
+                                combined_report += f"  - Total Results: {total_results}\n"
+                
+                
+                            # Top ports facet
+                            top_ports = facets.get("port", [])
+                            if top_ports:
+                                combined_report += "  - Top Ports:\n"
+                                for port in top_ports:
+                                    combined_report += f"    - Port {port.get('value', 'N/A')}: {port.get('count', 'N/A')} occurrences\n"
+                
+                            # Top products facet
+                            top_orgs = facets.get("org", [])
+                            if top_orgs:
+                                combined_report += "  - Top Organizations:\n"
+                                for org in top_orgs:  # Now 'org' is the variable holding each dictionary in 'top_orgs'
+                                    combined_report += f"    - {org.get('value', 'N/A')}: {org.get('count', 'N/A')} occurrences\n"
+                
+                
+                            combined_report += "\n"
+                        else:
+                            combined_report += f"Shodan Report for {entry}:\nNo facet data found.\n\n"
+                
+                        # Extract and display matches
+                        if matches and isinstance(matches, list):
+                            combined_report += "  - Matches:\n"
+                            for match in matches:
+                                ip_str = match.get("ip_str", "N/A")
+                                ports = match.get("port", [])
+                                org = match.get("org", "N/A")
+                                location = match.get("location", {})
+                                city = location.get("city", "N/A")
+                                region_code = location.get("region_code", "N/A")
+                                country = location.get("country_name", "N/A")
+                                longitude = location.get("longitude", "N/A")
+                                latitude = location.get("latitude", "N/A")
+                                product = match.get("product", "N/A")
+                                asn = match.get("asn", "N/A")
+                                isp = match.get("isp", "N/A")
+                                os = match.get("os", "N/A")
+                                domains = match.get("domains", [])
+                                snmp = match.get("snmp", {})
+                                ntp = match.get("ntp", {})
+                                vulns = match.get("vulns", {})
+                                #data = match.get("data", "N/A")
+                
+                                combined_report += f"    - IP: {sanitize_and_defang(ip_str)}\n"
+                                combined_report += f"      - Organization: {org}\n"
+                                combined_report += f"      - Product: {product}\n"
+                                combined_report += f"      - ASN: {asn}\n"
+                                combined_report += f"      - ISP: {isp}\n"
+                                combined_report += f"      - Operating System: {os}\n"
+                                combined_report += f"      - City: {city}\n"
+                                combined_report += f"      - Region Code: {region_code}\n"
+                                combined_report += f"      - Country: {country}\n"
+                                combined_report += f"      - Longitude: {longitude}\n"
+                                combined_report += f"      - Latitude: {latitude}\n"
+                                combined_report += f"      - Open Ports: {ports}\n"
+                                combined_report += f"      - Domains: {sanitize_and_defang(domains)}\n"
+                                #combined_report += f"      - Data: {data}\n"
+                
+                                # SNMP-specific details
+                                if snmp:
+                                    combined_report += "      - SNMP Information:\n"
+                                    combined_report += f"        - Versions: {snmp.get('versions', [])}\n"
+                                    combined_report += f"        - Engine ID Format: {snmp.get('engineid_format', 'N/A')}\n"
+                                    combined_report += f"        - Engine Boots: {snmp.get('engine_boots', 'N/A')}\n"
+                                    combined_report += f"        - Engine ID Data: {snmp.get('engineid_data', 'N/A')}\n"
+                                    combined_report += f"        - Enterprise: {snmp.get('enterprise', 'N/A')}\n"
+                                    combined_report += f"        - Engine Time: {snmp.get('engine_time', 'N/A')}\n"
+                
+                                # NTP-specific details
+                                if ntp:
+                                    combined_report += "      - NTP Information:\n"
+                                    combined_report += f"        - Root Delay: {ntp.get('root_delay', 'N/A')}\n"
+                                    combined_report += f"        - Clock Offset: {ntp.get('clock_offset', 'N/A')}\n"
+                                    combined_report += f"        - Version: {ntp.get('version', 'N/A')}\n"
+                                    combined_report += f"        - Precision: {ntp.get('precision', 'N/A')}\n"
+                                    combined_report += f"        - Stratum: {ntp.get('stratum', 'N/A')}\n"
+                                    combined_report += f"        - Leap: {ntp.get('leap', 'N/A')}\n"
+                                    combined_report += f"        - Reftime: {ntp.get('reftime', 'N/A')}\n"
+                                    combined_report += f"        - Root Dispersion: {ntp.get('root_dispersion', 'N/A')}\n"
+                                    combined_report += f"        - Poll: {ntp.get('poll', 'N/A')}\n"
+                                    combined_report += f"        - RefID: {ntp.get('refid', 'N/A')}\n"
+                
+                                # Vulnerabilities (CVEs)
+                                if isinstance(vulns, dict):
+                                    combined_report += "      - Vulnerabilities (CVEs):\n"
+                                    for cve_id, details in vulns.items():
+                                        cvss_score = details.get('cvss', 'N/A')
+                                        combined_report += f"        - CVE: {cve_id}\n"
+                                        combined_report += f"        - CVSS Score: {cvss_score}\n"
+                
+                                combined_report += "\n"
+                        else:
+                            combined_report += "  - No match data found.\n"
+                    else:
+                        combined_report += f"Shodan Report for {entry}:\nNo results found or invalid report format.\n\n"
+                
+                    # Append score breakdown
+                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+
+
+                
+                    # Append to scores list for sorting
+                    ioc_scores.append((entry, total_score, combined_report, verdict))
+                
+                    # Append the final CVE report
                     individual_combined_reports[category].append(combined_report)
 
             print(f"Completed Processing {category.upper()}\n")
