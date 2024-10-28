@@ -9,6 +9,7 @@ from file_operations.file_utils import (
     is_cve
 )
 import requests
+import urllib.parse
 from IPython.display import clear_output, HTML, display
 
 def get_censys_data(censys_api_key, censys_secret, query, status_output=None, progress_bar=None):
@@ -303,6 +304,152 @@ def search_censys_org(censys_api_key, censys_secret, org_name, status_output=Non
         org_summary = {"error": str(e)}
 
     return org_summary
+
+
+def search_censys_by_port(censys_api_key, censys_secret, port, country=None, status_output=None, progress_bar=None):
+    if status_output:
+        with status_output:
+            clear_output(wait=True)
+            display(HTML(f'<b>Searching Censys for port {port} in {country or "all countries"}...</b>'))
+            display(progress_bar)
+
+    API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
+    UID = censys_api_key
+    SECRET = censys_secret
+
+    auth = (UID, SECRET)
+
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+
+    # Form the query based on the selected port and country
+    query = f"services.port:{port}"
+    if country:
+        query += f" AND location.country:`{country}`"
+
+    query_payload = {
+        "q": query
+    }
+
+    port_summary = []
+    try:
+        # Send POST request to Censys API
+        res = requests.post(API_URL_SEARCH, json=query_payload, headers=headers, auth=auth)
+        res.raise_for_status()
+        response_data = res.json()
+
+        # DEBUG: Print the full JSON response from Censys for debugging
+        #print(f"DEBUG: Full Censys API response for port {port} in {country or 'all countries'}: {response_data}")
+
+        hits = response_data.get('result', {}).get('hits', [])
+        total_hits = len(hits)
+
+        if progress_bar:
+            progress_bar.total = total_hits
+
+        for index, result in enumerate(hits):
+            ip = result.get('ip', 'N/A')
+            last_updated_at = result.get('last_updated_at', 'N/A')
+
+            # Autonomous system details
+            asn_info = result.get('autonomous_system', {})
+            as_description = asn_info.get('description', 'N/A')
+            asn = asn_info.get('asn', 'N/A')
+            bgp_prefix = asn_info.get('bgp_prefix', 'N/A')
+            as_country_code = asn_info.get('country_code', 'N/A')
+            as_name = asn_info.get('name', 'N/A')
+
+            # Location details
+            location = result.get('location', {})
+            city = location.get('city', 'N/A')
+            province = location.get('province', 'N/A')
+            country = location.get('country', 'N/A')
+            continent = location.get('continent', 'N/A')
+            postal_code = location.get('postal_code', 'N/A')
+            latitude = location.get('coordinates', {}).get('latitude', 'N/A')
+            longitude = location.get('coordinates', {}).get('longitude', 'N/A')
+            timezone = location.get('timezone', 'N/A')
+            country_code = location.get('country_code', 'N/A')
+
+            # Operating system details
+            operating_system = result.get('operating_system', {})
+            os_product = operating_system.get('product', 'N/A')
+            os_vendor = operating_system.get('vendor', 'N/A')
+            os_cpe = operating_system.get('cpe', 'N/A')
+            os_source = operating_system.get('source', 'N/A')
+            os_family = next((item['value'] for item in operating_system.get('other', []) if item['key'] == 'family'), 'N/A')
+            os_device = next((item['value'] for item in operating_system.get('other', []) if item['key'] == 'device'), 'N/A')
+
+            # DNS information
+            dns_info = result.get('dns', {}).get('reverse_dns', {}).get('names', [])
+
+            # Services
+            services = result.get('services', [])
+            service_details = []
+            for service in services:
+                service_name = service.get('extended_service_name', 'N/A')
+                transport_protocol = service.get('transport_protocol', 'N/A')
+                port = service.get('port', 'N/A')
+                certificate = service.get('certificate', 'N/A')
+                service_details.append({
+                    "Service Name": service_name,
+                    "Transport Protocol": transport_protocol,
+                    "Port": port,
+                    "Certificate": certificate
+                })
+
+            # Matched services (specific to the port being searched)
+            matched_services = result.get('matched_services', [])
+            matched_service_details = []
+            for matched_service in matched_services:
+                matched_service_name = matched_service.get('extended_service_name', 'N/A')
+                matched_service_protocol = matched_service.get('transport_protocol', 'N/A')
+                matched_service_port = matched_service.get('port', 'N/A')
+                matched_service_details.append({
+                    "Matched Service Name": matched_service_name,
+                    "Transport Protocol": matched_service_protocol,
+                    "Port": matched_service_port
+                })
+
+            # Add all the information to the port_summary list
+            port_summary.append({
+                "IP": ip,
+                "Last Updated": last_updated_at,
+                "ASN": asn,
+                "Autonomous System": as_description,
+                "BGP Prefix": bgp_prefix,
+                "ASN Country Code": as_country_code,
+                "ASN Name": as_name,
+                "City": city,
+                "Province": province,
+                "Country": country,
+                "Continent": continent,
+                "Postal Code": postal_code,
+                "Latitude": latitude,
+                "Longitude": longitude,
+                "Timezone": timezone,
+                "Country Code": country_code,
+                "Operating System Product": os_product,
+                "Operating System Vendor": os_vendor,
+                "Operating System CPE": os_cpe,
+                "Operating System Source": os_source,
+                "Operating System Family": os_family,
+                "Operating System Device": os_device,
+                "DNS Reverse Names": dns_info,
+                "Services": service_details,
+                "Matched Services": matched_service_details
+            })
+
+            if progress_bar:
+                progress_bar.value += 1
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching port data from Censys: {str(e)}")
+        port_summary = {"error": str(e)}
+
+    return port_summary
 
 
 

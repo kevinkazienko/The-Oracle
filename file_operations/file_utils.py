@@ -101,7 +101,10 @@ def is_cve(input_text):
 def is_org(s):
     """
     Check if the input string matches typical organization naming conventions.
-    For simplicity, we assume organization names contain alphanumeric characters, spaces, and a few special characters.
-    This regex can be refined depending on your dataset.
+    This regex assumes organization names contain letters, spaces, and special characters but are not purely numeric.
     """
-    return re.match(r"^[a-zA-Z0-9&\s.,\-']+$", s.strip()) is not None
+    return re.match(r"^[a-zA-Z&\s.,\-']+$", s.strip()) is not None
+
+def is_port(s):
+    # Ports are numeric and range between 0 and 65535
+    return re.match(r"^([0-9]{1,5})$", s) is not None and 0 <= int(s) <= 65535
