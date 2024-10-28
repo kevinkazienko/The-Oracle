@@ -517,7 +517,7 @@ def get_trusted_provider_text(ioc_type, trusted_provider):
 
 
 
-def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_output=None):
+def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_output=None, progress_bar=None):
     total_score = 0
     score_breakdown = []
     malicious_count = 0

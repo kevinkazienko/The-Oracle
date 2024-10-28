@@ -120,7 +120,7 @@ def search_cves_on_censys(censys_api_key, censys_secret, query, status_output=No
         response_data = res.json()
 
         # Log the raw response to inspect it
-        print("DEBUG: Raw Censys API Response:", response_data)
+        #print("DEBUG: Raw Censys API Response:", response_data)
 
         hits = response_data.get('result', {}).get('hits', [])
         total_hits = len(hits)
