@@ -221,6 +221,90 @@ def search_cves_on_censys(censys_api_key, censys_secret, query, status_output=No
     return cves_summary
 
 
+def search_censys_org(censys_api_key, censys_secret, org_name, status_output=None, progress_bar=None):
+    if status_output:
+        with status_output:
+            clear_output(wait=True)
+            display(HTML(f'<b>Searching WHOIS organizations on Censys for {org_name}...</b>'))
+            display(progress_bar)
+
+    API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
+    UID = censys_api_key
+    SECRET = censys_secret
+
+    auth = (UID, SECRET)
+
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+
+    query_payload = {
+        "q": f"whois.organization.name:\"{org_name}\""
+    }
+
+    org_summary = []
+    try:
+        res = requests.post(API_URL_SEARCH, json=query_payload, headers=headers, auth=auth)
+        res.raise_for_status()
+        response_data = res.json()
+
+        #print("DEBUG: Full JSON response from Censys:", response_data)
+
+        hits = response_data.get('result', {}).get('hits', [])
+        total_hits = len(hits)
+
+        if progress_bar:
+            progress_bar.total = total_hits
+
+        for index, result in enumerate(hits):
+            ip = result.get('ip', 'N/A')
+            asn_info = result.get('autonomous_system', {})
+            as_description = asn_info.get('description', 'N/A')
+            asn = asn_info.get('asn', 'N/A')
+
+            # Extract location information
+            location = result.get('location', {})
+            city = location.get('city', 'N/A')
+            province = location.get('province', 'N/A')
+            country = location.get('country', 'N/A')
+            postal_code = location.get('postal_code', 'N/A')
+            latitude = location.get('coordinates', {}).get('latitude', 'N/A')
+            longitude = location.get('coordinates', {}).get('longitude', 'N/A')
+
+            # Extract services
+            services = result.get('services', [])
+            service_details = []
+            for service in services:
+                service_name = service.get('extended_service_name', 'N/A')
+                transport_protocol = service.get('transport_protocol', 'N/A')
+                port = service.get('port', 'N/A')
+                service_details.append(f"{service_name} ({transport_protocol} port {port})")
+
+            # Add all the information to the org_summary list
+            org_summary.append({
+                "IP": ip,
+                "ASN": asn,
+                "Autonomous System": as_description,
+                "City": city,
+                "Province": province,
+                "Country": country,
+                "Postal Code": postal_code,
+                "Latitude": latitude,
+                "Longitude": longitude,
+                "Services": service_details
+            })
+
+            if progress_bar:
+                progress_bar.value += 1
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching organization data from Censys: {str(e)}")
+        org_summary = {"error": str(e)}
+
+    return org_summary
+
+
 
 
 

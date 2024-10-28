@@ -44,7 +44,7 @@ from api_interactions.urlscan import (
     submit_url_to_urlscan,
     get_urlscan_report
 )
-from api_interactions.censys import get_censys_data, search_cves_on_censys
+from api_interactions.censys import get_censys_data, search_cves_on_censys, search_censys_org
 from api.api_keys import censys_api_key, censys_secret, metadefender_api_key
 from api_interactions.borealis import request_borealis, format_borealis_report
 from api_interactions.binaryedge import get_binaryedge_report
@@ -1740,7 +1740,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
         + len(selected_category['domains']) * 9  # 9 API calls per domain (if treated separately from URLs)
         + len(selected_category['hashes']) * 5  # 4 API calls per hash
         + len(selected_category['cves']) * 2
-        + len(selected_category['orgs']) * 1
+        + len(selected_category['orgs']) * 2
     )
 
     # Initialize the progress bar
@@ -3021,15 +3021,27 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                 elif category == "orgs":
                     print(f"DEBUG: Found 'orgs' category, proceeding with organization search")
                     report_shodan_org = None
+                    report_censys_org = None
                 
                     try:
                         report_shodan_org = search_shodan_org(entry, status_output=status_output, progress_bar=progress_bar)
-                        print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
+                        #print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
                         if progress_bar:
                             progress_bar.value += 1
                 
                     except Exception as e:
                         print(f"DEBUG: Shodan report failed with error: {e}")
+                        if progress_bar:
+                            progress_bar.value += 1
+
+                    try:
+                        report_censys_org = search_censys_org(censys_api_key, censys_secret, entry, status_output=status_output, progress_bar=progress_bar)
+                        print(f"DEBUG: search_censys_org returned: {report_censys_org}")
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                    except Exception as e:
+                        print(f"DEBUG: Censys organization search failed with error: {e}")
                         if progress_bar:
                             progress_bar.value += 1
                 
@@ -3041,7 +3053,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     # Calculate verdict and score breakdown
                     total_score, score_breakdown, verdict = calculate_total_malicious_score(
                         {
-                            "Shodan": report_shodan_org  # Ensure the report is passed correctly
+                            "Shodan": report_shodan_org,  # Ensure the report is passed correctly
+                            "Censys": report_censys_org,
                         },
                         None,  # Borealis is not used for Orgs, so pass None
                         ioc_type="org"
@@ -3159,6 +3172,24 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             combined_report += "  - No match data found.\n"
                     else:
                         combined_report += f"Shodan Report for {entry}:\nNo results found or invalid report format.\n\n"
+
+
+                    if report_censys_org and isinstance(report_censys_org, list):
+                        combined_report += f"Censys Organization Report for {entry}:\n"
+                        for org_entry in report_censys_org:
+                            combined_report += f"  - IP: {sanitize_and_defang(org_entry).get('IP', 'N/A')}\n"
+                            combined_report += f"    - ASN: {org_entry.get('ASN', 'N/A')}\n"
+                            combined_report += f"    - Autonomous System: {org_entry.get('Autonomous System', 'N/A')}\n"
+                            combined_report += f"    - Country: {org_entry.get('Country', 'N/A')}\n"
+                            combined_report += f"    - City: {org_entry.get('City', 'N/A')}\n"
+                            combined_report += f"    - Province: {org_entry.get('Province', 'N/A')}\n"
+                            combined_report += f"    - Postal Code: {org_entry.get('Postal Code', 'N/A')}\n"
+                            combined_report += f"    - Latitude: {org_entry.get('Latitude', 'N/A')}\n"
+                            combined_report += f"    - Longitude: {org_entry.get('Longitude', 'N/A')}\n"
+                            combined_report += f"    - Services: {', '.join(org_entry.get('Services', []))}\n"
+                            combined_report += "\n"
+                    else:
+                        combined_report += f"Censys Organization Report for {entry}:\nNo results found or invalid report format.\n\n"
                 
                     # Append score breakdown
                     combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
