@@ -223,10 +223,14 @@ def search_cves_on_censys(censys_api_key, censys_secret, query, status_output=No
 
 
 def search_censys_org(censys_api_key, censys_secret, org_name, status_output=None, progress_bar=None):
+    # Ensure that org_name is stripped of any 'org:' prefix
+    cleaned_org_name = org_name.replace('org:', '').strip()
+    print(f"DEBUG: Searching organizations on Censys for {cleaned_org_name}...")
+
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Searching WHOIS organizations on Censys for {org_name}...</b>'))
+            display(HTML(f'<b>Searching organizations on Censys for {cleaned_org_name}...</b>'))
             display(progress_bar)
 
     API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
@@ -240,8 +244,9 @@ def search_censys_org(censys_api_key, censys_secret, org_name, status_output=Non
         'Content-Type': 'application/json'
     }
 
+    # Use cleaned_org_name in the query
     query_payload = {
-        "q": f"whois.organization.name:\"{org_name}\""
+        "q": f"whois.organization.name:\"{cleaned_org_name}\""
     }
 
     org_summary = []
@@ -250,7 +255,8 @@ def search_censys_org(censys_api_key, censys_secret, org_name, status_output=Non
         res.raise_for_status()
         response_data = res.json()
 
-        #print("DEBUG: Full JSON response from Censys:", response_data)
+        # Print debug information for the response data
+        #print(f"DEBUG: Full JSON response from Censys: {response_data}")
 
         hits = response_data.get('result', {}).get('hits', [])
         total_hits = len(hits)

@@ -23,7 +23,8 @@ from file_operations.file_utils import (
     is_domain,
     is_cve,
     is_org,
-    is_port
+    is_port,
+    is_product
 )
 from api_interactions.virustotal import (
     get_ip_report,
@@ -37,7 +38,7 @@ from api_interactions.virustotal import (
     submit_domain_for_rescan,
     submit_hash_for_rescan
 )
-from api_interactions.shodan import get_shodan_report, search_shodan_cve_country, search_shodan_product_country, search_shodan_org, search_shodan_by_port
+from api_interactions.shodan import get_shodan_report, search_shodan_cve_country, search_shodan_product_country, search_shodan_org, search_shodan_by_port, search_shodan_product_in_country
 from api_interactions.alienvault import get_alienvault_report
 from api_interactions.ipqualityscore import get_ipqualityscore_report, parse_ipqualityscore_report
 from api_interactions.greynoise import get_greynoise_report
@@ -101,28 +102,20 @@ def auto_detect_ioc_type(iocs):
 
 
 def parse_bulk_iocs(content):
-    iocs = {'ips': [], 'urls': [], 'domains': [], 'hashes': [], 'cves': [], 'orgs': [], 'ports': []}
+    iocs = {'ips': [], 'urls': [], 'domains': [], 'hashes': [], 'cves': [], 'orgs': [], 'ports': [], 'products': []}
     if not content:
         return iocs
     for line in content.splitlines():
         line = line.strip()
         if line:
-            if is_ip(line):
-                iocs['ips'].append(line)
-            elif is_url(line):
-                iocs['urls'].append(line)
-            elif is_domain(line):
-                iocs['domains'].append(line)
-            elif is_hash(line):
-                iocs['hashes'].append(line)
-            elif is_cve(line):  # Detect CVEs
-                iocs['cves'].append(line)
-            elif is_org(line):  # Detect organizations
-                iocs['orgs'].append(line)
-            elif is_port(line):  # Detect ports
-                iocs['ports'].append(line)
-            else:
-                print(f"Sorry, we were unable to recognize IOC format: {line}")
+            ioc_type = classify_ioc(line)
+            if ioc_type != 'unknown':
+                if ioc_type == 'hash':
+                    iocs['hashes'].append(line)
+                elif ioc_type == 'product':
+                    iocs['products'].append(line)
+                else:
+                    iocs[f'{ioc_type}s'].append(line)
     return iocs
 
 
@@ -1734,6 +1727,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
     selected_category.setdefault('cves', [])
     selected_category.setdefault('orgs', [])
     selected_category.setdefault('ports', [])
+    selected_category.setdefault('products', [])
 
     print(f"DEBUG: Updated selected_category = {selected_category}")
 
@@ -1746,6 +1740,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
         + len(selected_category['cves']) * 2
         + len(selected_category['orgs']) * 2
         + len(selected_category['ports']) * 2
+        + len(selected_category['products']) * 1
     )
 
     # Initialize the progress bar
@@ -3013,23 +3008,25 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
 
                     
-                    # Append score breakdown
-                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
-
-                    # Append to scores list for sorting
-                    ioc_scores.append((entry, total_score, combined_report, verdict))
-                
-                    # Append the final CVE report
-                    individual_combined_reports[category].append(combined_report)
+                        # Append score breakdown
+                        combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+    
+                        # Append to scores list for sorting
+                        ioc_scores.append((entry, total_score, combined_report, verdict))
+                    
+                        # Append the final CVE report
+                        individual_combined_reports[category].append(combined_report)
 
 
                 elif category == "orgs":
                     print(f"DEBUG: Found 'orgs' category, proceeding with organization search")
                     report_shodan_org = None
                     report_censys_org = None
-                
+                    orgs = selected_category.get("orgs", [])
+                    org_name = orgs[0] if orgs else "N/A"
+                    
                     try:
-                        report_shodan_org = search_shodan_org(entry, status_output=status_output, progress_bar=progress_bar)
+                        report_shodan_org = search_shodan_org(org_name, status_output=status_output, progress_bar=progress_bar)
                         #print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
                         if progress_bar:
                             progress_bar.value += 1
@@ -3038,10 +3035,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         print(f"DEBUG: Shodan report failed with error: {e}")
                         if progress_bar:
                             progress_bar.value += 1
-
+                
                     try:
-                        report_censys_org = search_censys_org(censys_api_key, censys_secret, entry, status_output=status_output, progress_bar=progress_bar)
-                        print(f"DEBUG: search_censys_org returned: {report_censys_org}")
+                        report_censys_org = search_censys_org(censys_api_key, censys_secret, org_name, status_output=status_output, progress_bar=progress_bar)
+                        #print(f"DEBUG: search_censys_org returned: {report_censys_org}")
                         if progress_bar:
                             progress_bar.value += 1
                 
@@ -3050,10 +3047,9 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         if progress_bar:
                             progress_bar.value += 1
                 
-                    
                     total_score = 0
                     breakdown_str = ""
-                    verdict = "Not Malicious"  # Default verdict in case there's no valid result
+                    verdict = "Not Malicious"  # Default verdict
                 
                     # Calculate verdict and score breakdown
                     total_score, score_breakdown, verdict = calculate_total_malicious_score(
@@ -3064,50 +3060,51 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         None,  # Borealis is not used for Orgs, so pass None
                         ioc_type="org"
                     )
-                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
                 
                     # Check if the Shodan Org report is valid and process accordingly
                     if report_shodan_org and isinstance(report_shodan_org, dict):
                         facets = report_shodan_org.get("facets", {})
                         matches = report_shodan_org.get("matches", [])
-                        orgs = selected_category.get("orgs", [])
-                
+                        
                         # Extract total results from the Shodan report
                         total_results = report_shodan_org.get("total", 0)
-                
-                        # Extract facet information if available
-                        if facets:
-                            combined_report += f"Shodan Report for {entry}:\n"
-                
-                            if total_results:
-                                combined_report += f"  - Total Results: {total_results}\n"
-                
-                
-                            # Top ports facet
-                            top_ports = facets.get("port", [])
-                            if top_ports:
-                                combined_report += "  - Top Ports:\n"
-                                for port in top_ports:
-                                    combined_report += f"    - Port {port.get('value', 'N/A')}: {port.get('count', 'N/A')} occurrences\n"
-                
-                            # Top products facet
-                            top_orgs = facets.get("org", [])
-                            if top_orgs:
-                                combined_report += "  - Top Organizations:\n"
-                                for org in top_orgs:  # Now 'org' is the variable holding each dictionary in 'top_orgs'
-                                    combined_report += f"    - {org.get('value', 'N/A')}: {org.get('count', 'N/A')} occurrences\n"
-                
-                
-                            combined_report += "\n"
-                        else:
-                            combined_report += f"Shodan Report for {entry}:\nNo facet data found.\n\n"
-                
+                        
+                        # Start building the report
+                        combined_report += f"Shodan Report for {org_name}:\n"
+                        
+                        # Total results from Shodan
+                        if total_results:
+                            combined_report += f"  - Total Results: {total_results}\n"
+                        
+                        # Top ports facet
+                        top_ports = facets.get("port", [])
+                        if top_ports:
+                            combined_report += "  - Top Ports:\n"
+                            for port in top_ports:
+                                combined_report += f"    - Port {port.get('value', 'N/A')}: {port.get('count', 'N/A')} occurrences\n"
+                    
+                        # Top organizations facet (this was missing previously)
+                        top_orgs = facets.get("org", [])
+                        if top_orgs:
+                            combined_report += "  - Top Organizations:\n"
+                            for org in top_orgs:
+                                combined_report += f"    - {org.get('value', 'N/A')}: {org.get('count', 'N/A')} occurrences\n"
+                        
+                        # Top products facet
+                        top_products = facets.get("product", [])
+                        if top_products:
+                            combined_report += "  - Top Products:\n"
+                            for product in top_products:
+                                combined_report += f"    - {product.get('value', 'N/A')}: {product.get('count', 'N/A')} occurrences\n"
+                        
+                        combined_report += "\n"
+                        
                         # Extract and display matches
                         if matches and isinstance(matches, list):
                             combined_report += "  - Matches:\n"
                             for match in matches:
                                 ip_str = match.get("ip_str", "N/A")
-                                ports = match.get("port", [])
+                                port = match.get("port", "N/A")
                                 org = match.get("org", "N/A")
                                 location = match.get("location", {})
                                 city = location.get("city", "N/A")
@@ -3123,8 +3120,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                 snmp = match.get("snmp", {})
                                 ntp = match.get("ntp", {})
                                 vulns = match.get("vulns", {})
-                                #data = match.get("data", "N/A")
-                
+                                
                                 combined_report += f"    - IP: {sanitize_and_defang(ip_str)}\n"
                                 combined_report += f"      - Organization: {org}\n"
                                 combined_report += f"      - Product: {product}\n"
@@ -3136,34 +3132,9 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                 combined_report += f"      - Country: {country}\n"
                                 combined_report += f"      - Longitude: {longitude}\n"
                                 combined_report += f"      - Latitude: {latitude}\n"
-                                combined_report += f"      - Open Ports: {ports}\n"
+                                combined_report += f"      - Open Ports: {port}\n"
                                 combined_report += f"      - Domains: {sanitize_and_defang(domains)}\n"
-                                #combined_report += f"      - Data: {data}\n"
-                
-                                # SNMP-specific details
-                                if snmp:
-                                    combined_report += "      - SNMP Information:\n"
-                                    combined_report += f"        - Versions: {snmp.get('versions', [])}\n"
-                                    combined_report += f"        - Engine ID Format: {snmp.get('engineid_format', 'N/A')}\n"
-                                    combined_report += f"        - Engine Boots: {snmp.get('engine_boots', 'N/A')}\n"
-                                    combined_report += f"        - Engine ID Data: {snmp.get('engineid_data', 'N/A')}\n"
-                                    combined_report += f"        - Enterprise: {snmp.get('enterprise', 'N/A')}\n"
-                                    combined_report += f"        - Engine Time: {snmp.get('engine_time', 'N/A')}\n"
-                
-                                # NTP-specific details
-                                if ntp:
-                                    combined_report += "      - NTP Information:\n"
-                                    combined_report += f"        - Root Delay: {ntp.get('root_delay', 'N/A')}\n"
-                                    combined_report += f"        - Clock Offset: {ntp.get('clock_offset', 'N/A')}\n"
-                                    combined_report += f"        - Version: {ntp.get('version', 'N/A')}\n"
-                                    combined_report += f"        - Precision: {ntp.get('precision', 'N/A')}\n"
-                                    combined_report += f"        - Stratum: {ntp.get('stratum', 'N/A')}\n"
-                                    combined_report += f"        - Leap: {ntp.get('leap', 'N/A')}\n"
-                                    combined_report += f"        - Reftime: {ntp.get('reftime', 'N/A')}\n"
-                                    combined_report += f"        - Root Dispersion: {ntp.get('root_dispersion', 'N/A')}\n"
-                                    combined_report += f"        - Poll: {ntp.get('poll', 'N/A')}\n"
-                                    combined_report += f"        - RefID: {ntp.get('refid', 'N/A')}\n"
-                
+                                
                                 # Vulnerabilities (CVEs)
                                 if isinstance(vulns, dict):
                                     combined_report += "      - Vulnerabilities (CVEs):\n"
@@ -3171,18 +3142,18 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                         cvss_score = details.get('cvss', 'N/A')
                                         combined_report += f"        - CVE: {cve_id}\n"
                                         combined_report += f"        - CVSS Score: {cvss_score}\n"
-                
+                                
                                 combined_report += "\n"
                         else:
                             combined_report += "  - No match data found.\n"
                     else:
-                        combined_report += f"Shodan Report for {entry}:\nNo results found or invalid report format.\n\n"
-
-
+                        combined_report += f"Shodan Report for {org_name}:\nNo results found or invalid report format.\n\n"
+                
+                    # Process Censys results
                     if report_censys_org and isinstance(report_censys_org, list):
-                        combined_report += f"Censys Organization Report for {entry}:\n"
+                        combined_report += f"Censys Organization Report for {org_name}:\n"
                         for org_entry in report_censys_org:
-                            combined_report += f"  - IP: {sanitize_and_defang(org_entry).get('IP', 'N/A')}\n"
+                            combined_report += f"  - IP: {sanitize_and_defang(org_entry.get('IP', 'N/A'))}\n"
                             combined_report += f"    - ASN: {org_entry.get('ASN', 'N/A')}\n"
                             combined_report += f"    - Autonomous System: {org_entry.get('Autonomous System', 'N/A')}\n"
                             combined_report += f"    - Country: {org_entry.get('Country', 'N/A')}\n"
@@ -3194,7 +3165,18 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             combined_report += f"    - Services: {', '.join(org_entry.get('Services', []))}\n"
                             combined_report += "\n"
                     else:
-                        combined_report += f"Censys Organization Report for {entry}:\nNo results found or invalid report format.\n\n"
+                        combined_report += f"Censys Organization Report for {org_name}:\nNo results found or invalid report format.\n\n"
+                
+                    # Add the score breakdown
+                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+    
+    
+                    
+                    # Append to scores list for sorting
+                    ioc_scores.append((entry, total_score, combined_report, verdict))
+                
+                    # Append the final CVE report
+                    individual_combined_reports[category].append(combined_report)
 
 
                 elif category == "ports":
@@ -3240,7 +3222,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         None,  # Borealis is not used for ports, so pass None
                         ioc_type="port"
                     )
-                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                    #combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
 
                     # Shodan Report
                     if report_shodan_port and isinstance(report_shodan_port.get('matches', []), list):
@@ -3346,11 +3328,117 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     else:
                         combined_report += f"Censys Report for Port {entry}:\nNo results found or invalid report format.\n\n"
                 
-                    # Append score breakdown
-                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+                        # Append score breakdown
+                        combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+    
+    
+                    
+                        # Append to scores list for sorting
+                        ioc_scores.append((entry, total_score, combined_report, verdict))
+                    
+                        # Append the final CVE report
+                        individual_combined_reports[category].append(combined_report)
 
 
+                elif category == "products":
+                    print(f"DEBUG: Found 'products' category, proceeding with product search")
+                    
+                    # Initialize report and other variables
+                    report_shodan_product = None
+                    selected_country = selected_country if selected_country != 'All' else None
                 
+                    try:
+                        # Perform product search on Shodan
+                        report_shodan_product = search_shodan_product_country(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                        
+                        if progress_bar:
+                            progress_bar.value += 1
+                    except Exception as e:
+                        print(f"DEBUG: Shodan product search failed with error: {e}")
+                        if progress_bar:
+                            progress_bar.value += 1
+
+                    total_score = 0
+                    breakdown_str = ""
+                    verdict = "Not Malicious"  # Default verdict in case there's no valid result
+                
+                    # Calculate verdict and score breakdown
+                    total_score, score_breakdown, verdict = calculate_total_malicious_score(
+                        {
+                            "Shodan": report_shodan_product,
+                        },
+                        None,  # Borealis is not used for ports, so pass None
+                        ioc_type="products"
+                    )
+                    #combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                
+                    # Ensure that the product search is only processed once
+                    if report_shodan_product:
+                        combined_report += f"Shodan Report for Product {entry} in {selected_country if selected_country else 'any country'}:\n"
+                        combined_report += f"  - Total Results: {report_shodan_product.get('total', 'N/A')}\n"
+                
+                        # Process facets
+                        facets = report_shodan_product.get('facets', {})
+                        top_cities = '\n    - '.join([f"{city.get('value', 'N/A')} (Count: {city.get('count', 'N/A')})" for city in facets.get('city', [])])
+                        top_ports = '\n    - '.join([f"{port.get('value', 'N/A')} (Count: {port.get('count', 'N/A')})" for port in facets.get('port', [])])
+                        top_orgs = '\n    - '.join([f"{org.get('value', 'N/A')} (Count: {org.get('count', 'N/A')})" for org in facets.get('org', [])])
+                        top_products = '\n    - '.join([f"{product.get('value', 'N/A')} (Count: {product.get('count', 'N/A')})" for product in facets.get('product', [])])
+                
+                        combined_report += f"  - Top Cities:\n    - {top_cities or 'N/A'}\n"
+                        combined_report += f"  - Top Ports:\n    - {top_ports or 'N/A'}\n"
+                        combined_report += f"  - Top Organizations:\n    - {top_orgs or 'N/A'}\n"
+                        combined_report += f"  - Top Products:\n    - {top_products or 'N/A'}\n\n"
+                
+                        # Process matches
+                        for match in report_shodan_product.get('matches', []):
+                            ip_str = match.get('ip_str', 'N/A')
+                            port = match.get('port', 'N/A')
+                            org = match.get('org', 'N/A')
+                            asn = match.get('asn', 'N/A')
+                            isp = match.get('isp', 'N/A')
+                            product = match.get('product', 'N/A')
+                            version = match.get('version', 'N/A')
+                            os = match.get('os', 'N/A')
+                            domains = ', '.join(match.get('domains', [])) if match.get('domains') else 'N/A'
+                            hostnames = ', '.join(match.get('hostnames', [])) if match.get('hostnames') else 'N/A'
+                            country_name = match.get('location', {}).get('country_name', 'N/A')
+                            city = match.get('location', {}).get('city', 'N/A')
+                            region_code = match.get('location', {}).get('region_code', 'N/A')
+                            latitude = match.get('location', {}).get('latitude', 'N/A')
+                            longitude = match.get('location', {}).get('longitude', 'N/A')
+                            timestamp = match.get('timestamp', 'N/A')
+                
+                            # Extract vulnerabilities if available
+                            vulns = match.get('vulns', [])
+                            vulns_str = ', '.join(vulns) if vulns else 'None'
+                
+                            combined_report += (
+                                f"  - IP: {sanitize_and_defang(ip_str)}\n"
+                                f"    Port: {port}\n"
+                                f"    Organization: {org}\n"
+                                f"    ASN: {asn}\n"
+                                f"    ISP: {isp}\n"
+                                f"    OS: {os}\n"
+                                f"    Product: {product}\n"
+                                f"    Version: {version}\n"
+                                f"    Domains: {sanitize_and_defang(domains)}\n"
+                                f"    Hostnames: {hostnames}\n"
+                                f"    Country: {country_name}\n"
+                                f"    City: {city}\n"
+                                f"    Region Code: {region_code}\n"
+                                f"    Latitude: {latitude}\n"
+                                f"    Longitude: {longitude}\n"
+                                f"    Timestamp: {timestamp}\n"
+                                f"    Vulnerabilities: {vulns_str}\n\n"
+                            )
+                    else:
+                        combined_report += f"No results found for product {entry} in {selected_country if selected_country else 'any country'}.\n"
+                    
+                    # Append the score breakdown
+                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+    
+    
+                    
                     # Append to scores list for sorting
                     ioc_scores.append((entry, total_score, combined_report, verdict))
                 

@@ -101,10 +101,22 @@ def is_cve(input_text):
 def is_org(s):
     """
     Check if the input string matches typical organization naming conventions.
-    This regex assumes organization names contain letters, spaces, and special characters but are not purely numeric.
+    This regex assumes organization names contain mostly letters and spaces.
     """
-    return re.match(r"^[a-zA-Z&\s.,\-']+$", s.strip()) is not None
+    # Allow letters, spaces, periods, and hyphens, but restrict to mostly letters (not mixed-case or digit-heavy patterns)
+    return bool(re.match(r"^[A-Za-z\s&.,\-']+$", s.strip()))
 
 def is_port(s):
     # Ports are numeric and range between 0 and 65535
     return re.match(r"^([0-9]{1,5})$", s) is not None and 0 <= int(s) <= 65535
+
+def is_product(s):
+    """
+    Detects if the input string is likely a product name.
+    Focuses on patterns with multiple uppercase letters, digits, or special characters.
+    Avoids detecting common organization name patterns.
+    """
+    # Check for mixed-case with at least two uppercase letters or includes digits/special characters
+    if bool(re.search(r'[A-Z]{2,}', s)) or bool(re.search(r'\d', s)):
+        return True
+    return False
