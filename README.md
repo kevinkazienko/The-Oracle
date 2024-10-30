@@ -144,3 +144,6 @@ Added UI support for light/dark mode
 
 **V2.5**  
 Revamped UI, auto IOC type detection for searches.
+
+**V2.9.7**
+Added Port, Product, Organization and CVE search capabilities for Shodan and Censys.
