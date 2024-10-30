@@ -1781,97 +1781,57 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_binaryedge_ip = None
                     report_metadefender_ip = None
 
-                    try:
-                        report_vt_ip = get_ip_report(entry, status_output, progress_bar)
-                        if progress_bar:
+                    
+                    report_vt_ip = get_ip_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_abuseipdb = get_abuseipdb_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_shodan = get_shodan_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_greynoise = get_greynoise_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_censys = get_censys_data(censys_api_key, censys_secret, entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_binaryedge_ip = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_metadefender_ip = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                # Borealis Report
+                
+                    borealis_report = request_borealis(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
                             progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: VirusTotal report failed with error: {e}")
-                        report_vt_ip = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_abuseipdb = get_abuseipdb_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: AbuseIPDB report failed with error: {e}")
-                        report_abuseipdb = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_shodan = get_shodan_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: Shodan report failed with error: {e}")
-                        report_shodan = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: AlienVault report failed with error: {e}")
-                        report_alienvault = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: IPQualityScore report failed with error: {e}")
-                        report_ipqualityscore = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_greynoise = get_greynoise_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: GreyNoise report failed with error: {e}")
-                        report_greynoise = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_censys = get_censys_data(censys_api_key, censys_secret, entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: Censys report failed with error: {e}")
-                        report_censys = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_binaryedge_ip = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: BinaryEdge report failed with error: {e}")
-                        report_binaryedge_ip = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_metadefender_ip = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: MetaDefender report failed with error: {e}")
-                        report_metadefender_ip = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    # Borealis Report
-                    try:
-                        borealis_report = request_borealis(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                                progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: Borealis report failed with error: {e}")
-                        borealis_report = None
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
 
 
                     # List of reports to check for trusted provider detection
@@ -2139,83 +2099,51 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_binaryedge_url = None
                     report_metadefender_url = None
 
-                    try:
-                        urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
+                    
+                    urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    url_id = submit_url_for_analysis(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    if url_id:
+                        time.sleep(16)
+                        report_vt_url = get_url_report(url_id, status_output, progress_bar)
                         if progress_bar:
                             progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: URLScan report failed with error: {e}")
-                        urlscan_uuid = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        url_id = submit_url_for_analysis(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: VirusTotal report failed with error: {e}")
-                        url_id = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: IPQualityScore report failed with error: {e}")
-                        report_ipqualityscore = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: AlienVault report failed with error: {e}")
-                        report_alienvault = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        if url_id:
-                            time.sleep(16)
-                            report_vt_url = get_url_report(url_id, status_output, progress_bar)
+                
+                    
+                        if urlscan_uuid:
+                            report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
                             if progress_bar:
                                 progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: VirusTotal report failed with error: {e}")
-                        report_vt_url = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                        try:
-                            if urlscan_uuid:
-                                report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
-                                if progress_bar:
-                                    progress_bar.value += 1
-                        except Exception as e:
-                            print(f"DEBUG: URLScan report failed with error: {e}")
-                            urlscan_uuid = None
-                            if progress_bar:
-                                progress_bar.value += 1
-                            else:
-                                report_urlscan = None
-                    try:
-                        report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: BinaryEdge report failed with error: {e}")
-                        report_binaryedge_url = None
-                        if progress_bar:
-                            progress_bar.value += 1
-                    try:
-                        report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: MetaDefender report failed with error: {e}")
-                        report_metadefender_url = None
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                        else:
+                            report_urlscan = None
+                
+                    report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                    
                 
                     # Check if the domain is resolving
                     if report_urlscan and isinstance(report_urlscan, dict) and not report_urlscan.get('Resolving', True):
@@ -2223,15 +2151,11 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += f"Verdict: Not Malicious (Domain Not Resolving)\n\n"
                         continue  # Skip further checks for this URL as it's not resolving
                         
-                    try:
-                        borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: Borealis report failed with error: {e}")
-                        borealis_report = None
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                    
 
 
                     # List of reports to check for trusted provider (URLScan, AlienVault, IPQualityScore)
@@ -2450,68 +2374,44 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_hybrid_analysis = None
                     report_malshare = None
 
-                    try:
-                        report_vt_hash = get_hash_report(entry, status_output, progress_bar)
-                    # print(json.dumps(report_vt_hash, indent=4))
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: VirusTotal report failed with error: {e}")
-                        report_vt_hash = None
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    report_vt_hash = get_hash_report(entry, status_output, progress_bar)
+                  # print(json.dumps(report_vt_hash, indent=4))
+                    if progress_bar:
+                        progress_bar.value += 1
+                
 
-                    try:
-                        report_malwarebazaar = get_malwarebazaar_hash_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: MalwareBazaar report failed with error: {e}")
-                        report_malwarebazaar = None
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                    report_malwarebazaar = get_malwarebazaar_hash_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
 
-                    try:
-                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: AlienVault report failed with error: {e}")
-                        report_alienvault = None
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
 
-                    try:
-                        report_metadefender_hash = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: MetaDefender report failed with error: {e}")
-                        report_metadefender_hash = None
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                    report_metadefender_hash = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
 
-                    try:
-                    # Fetch Hybrid Analysis report
-                        report_hybrid_analysis = get_hybrid_analysis_hash_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: Hybrid-Analysis report failed with error: {e}")
-                        report_hybrid_analysis = None
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                # Fetch Hybrid Analysis report
+                    report_hybrid_analysis = get_hybrid_analysis_hash_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
 
-                    try:
-                    # Fetch Malshare Hash Report
-                        report_malshare = get_malshare_hash_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: Malshare report failed with error: {e}")
-                        report_malshare = None
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                # Fetch Malshare Hash Report
+                    report_malshare = get_malshare_hash_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                    
                 
                     breakdown_str = ""
                     verdict = "Not Malicious"
@@ -2829,14 +2729,13 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     else:
                         combined_report += "Malshare Report: No data available\n\n"
 
-
-                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
-
-                    # Append to scores list for sorting
-                    ioc_scores.append((entry, total_score, combined_report, verdict))
-                
-                    # Append the final CVE report
-                    individual_combined_reports[category].append(combined_report)
+                        combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+    
+                        # Append to scores list for sorting
+                        ioc_scores.append((entry, total_score, combined_report, verdict))
+                    
+                        # Append the final CVE report
+                        individual_combined_reports[category].append(combined_report)
 
 
                 elif category == "cves":
@@ -2844,28 +2743,22 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_censys_cve = None
                 
                     # Fetch the Shodan CVE report
-                    try:
-                        report_shodan_cve = search_shodan_cve_country(entry, selected_country, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
                 
-                        # Debugging the report retrieved from Shodan
-                        # print(f"DEBUG: Full Shodan CVE Report: {json.dumps(report_shodan_cve, indent=2)}")
+                    report_shodan_cve = search_shodan_cve_country(entry, selected_country, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+            
+                    # Debugging the report retrieved from Shodan
+                    # print(f"DEBUG: Full Shodan CVE Report: {json.dumps(report_shodan_cve, indent=2)}")
+            
                 
-                    except Exception as e:
-                        print(f"DEBUG: Shodan report failed with error: {e}")
-                        if progress_bar:
-                            progress_bar.value += 1
 
                     # Fetch the Censys CVE report
-                    try:
-                        report_censys_cve = search_cves_on_censys(censys_api_key, censys_secret, entry, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: Censys report failed with error: {e}")
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                    report_censys_cve = search_cves_on_censys(censys_api_key, censys_secret, entry, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                    
 
                 
                     
@@ -3006,16 +2899,14 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     else:
                         combined_report += f"Censys Report for {entry}:\nNo results found or invalid report format.\n\n"
 
+                    # Append score breakdown
+                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
 
-                    
-                        # Append score breakdown
-                        combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
-    
-                        # Append to scores list for sorting
-                        ioc_scores.append((entry, total_score, combined_report, verdict))
-                    
-                        # Append the final CVE report
-                        individual_combined_reports[category].append(combined_report)
+                    # Append to scores list for sorting
+                    ioc_scores.append((entry, total_score, combined_report, verdict))
+                
+                    # Append the final CVE report
+                    individual_combined_reports[category].append(combined_report)
 
 
                 elif category == "orgs":
@@ -3025,27 +2916,21 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     orgs = selected_category.get("orgs", [])
                     org_name = orgs[0] if orgs else "N/A"
                     
-                    try:
-                        report_shodan_org = search_shodan_org(org_name, status_output=status_output, progress_bar=progress_bar)
-                        #print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    report_shodan_org = search_shodan_org(org_name, status_output=status_output, progress_bar=progress_bar)
+                    #print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
+                    if progress_bar:
+                        progress_bar.value += 1
+            
                 
-                    except Exception as e:
-                        print(f"DEBUG: Shodan report failed with error: {e}")
-                        if progress_bar:
-                            progress_bar.value += 1
+            
                 
-                    try:
-                        report_censys_org = search_censys_org(censys_api_key, censys_secret, org_name, status_output=status_output, progress_bar=progress_bar)
-                        #print(f"DEBUG: search_censys_org returned: {report_censys_org}")
-                        if progress_bar:
-                            progress_bar.value += 1
+                    report_censys_org = search_censys_org(censys_api_key, censys_secret, org_name, status_output=status_output, progress_bar=progress_bar)
+                    #print(f"DEBUG: search_censys_org returned: {report_censys_org}")
+                    if progress_bar:
+                        progress_bar.value += 1
                 
-                    except Exception as e:
-                        print(f"DEBUG: Censys organization search failed with error: {e}")
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
                 
                     total_score = 0
                     breakdown_str = ""
@@ -3169,8 +3054,6 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                 
                     # Add the score breakdown
                     combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
-    
-    
                     
                     # Append to scores list for sorting
                     ioc_scores.append((entry, total_score, combined_report, verdict))
@@ -3187,27 +3070,21 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     # Use the selected country from the UI, and don't filter if "All" is selected
                     selected_country = selected_country if selected_country != 'All' else None
 
-                    try:
-                        # Perform port search on Shodan, passing the selected country if applicable
-                        report_shodan_port = search_shodan_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: Shodan port search failed with error: {e}")
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    # Perform port search on Shodan, passing the selected country if applicable
+                    report_shodan_port = search_shodan_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                 
-                    try:
-                        # Perform port search on Censys, passing the selected country if applicable
-                        report_censys_port = search_censys_by_port(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                        #print(f"DEBUG: search_censys_by_port returned: {report_censys_port}")
-                        if progress_bar:
-                            progress_bar.value += 1
+            
                 
-                    except Exception as e:
-                        print(f"DEBUG: Censys port search failed with error: {e}")
-                        if progress_bar:
-                            progress_bar.value += 1
+                    # Perform port search on Censys, passing the selected country if applicable
+                    report_censys_port = search_censys_by_port(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                    #print(f"DEBUG: search_censys_by_port returned: {report_censys_port}")
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                    
                 
                     total_score = 0
                     breakdown_str = ""
@@ -3328,16 +3205,14 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     else:
                         combined_report += f"Censys Report for Port {entry}:\nNo results found or invalid report format.\n\n"
                 
-                        # Append score breakdown
-                        combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
-    
-    
-                    
-                        # Append to scores list for sorting
-                        ioc_scores.append((entry, total_score, combined_report, verdict))
-                    
-                        # Append the final CVE report
-                        individual_combined_reports[category].append(combined_report)
+                    # Append score breakdown
+                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+                
+                    # Append to scores list for sorting
+                    ioc_scores.append((entry, total_score, combined_report, verdict))
+                
+                    # Append the final CVE report
+                    individual_combined_reports[category].append(combined_report)
 
 
                 elif category == "products":
@@ -3347,16 +3222,13 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_shodan_product = None
                     selected_country = selected_country if selected_country != 'All' else None
                 
-                    try:
-                        # Perform product search on Shodan
-                        report_shodan_product = search_shodan_product_country(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                        
-                        if progress_bar:
-                            progress_bar.value += 1
-                    except Exception as e:
-                        print(f"DEBUG: Shodan product search failed with error: {e}")
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    # Perform product search on Shodan
+                    report_shodan_product = search_shodan_product_country(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                    
+                    if progress_bar:
+                        progress_bar.value += 1
+                    
 
                     total_score = 0
                     breakdown_str = ""
@@ -3436,8 +3308,6 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     
                     # Append the score breakdown
                     combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
-    
-    
                     
                     # Append to scores list for sorting
                     ioc_scores.append((entry, total_score, combined_report, verdict))
