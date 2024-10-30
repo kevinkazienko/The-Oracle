@@ -9,6 +9,7 @@ from file_operations.file_utils import (
     is_cve
 )
 import requests
+import json
 import urllib.parse
 from IPython.display import clear_output, HTML, display
 
@@ -98,6 +99,7 @@ def search_cves_on_censys(censys_api_key, censys_secret, query, status_output=No
             clear_output(wait=True)
             display(HTML(f'<b>Searching CVEs on Censys for {query}...</b>'))
             display(progress_bar)
+    print(f"Searching Censys for query: {query}")
 
     API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
     UID = censys_api_key
@@ -232,6 +234,7 @@ def search_censys_org(censys_api_key, censys_secret, org_name, status_output=Non
             clear_output(wait=True)
             display(HTML(f'<b>Searching organizations on Censys for {cleaned_org_name}...</b>'))
             display(progress_bar)
+    print(f"Searching Censys for query: {cleaned_org_name}")
 
     API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
     UID = censys_api_key
@@ -318,6 +321,7 @@ def search_censys_by_port(censys_api_key, censys_secret, port, country=None, sta
             clear_output(wait=True)
             display(HTML(f'<b>Searching Censys for port {port} in {country or "all countries"}...</b>'))
             display(progress_bar)
+    print(f"Searching Censys for query: {port}")
 
     API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
     UID = censys_api_key
@@ -456,6 +460,107 @@ def search_censys_by_port(censys_api_key, censys_secret, port, country=None, sta
         port_summary = {"error": str(e)}
 
     return port_summary
+
+
+def search_censys_product_country(censys_api_key, censys_secret, product, country=None, status_output=None, progress_bar=None):
+    if status_output:
+        with status_output:
+            clear_output(wait=True)
+            display(HTML(f'<b>Searching Censys for product {product} in {country or "all countries"}...</b>'))
+            display(progress_bar)
+    print(f"Searching Censys for query: {product}")
+
+    API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
+    UID = censys_api_key
+    SECRET = censys_secret
+
+    auth = (UID, SECRET)
+
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+
+    # Form the query based on the selected product and country
+    query = f"services.software.product:{product}"
+    if country:
+        query += f" AND location.country:`{country}`"
+
+    query_payload = {
+        "q": query
+    }
+
+    product_summary = []
+    try:
+        # Send POST request to Censys API
+        res = requests.post(API_URL_SEARCH, json=query_payload, headers=headers, auth=auth)
+        res.raise_for_status()  # Raise exception for bad HTTP responses
+        response_data = res.json()
+        #print(json.dumps(response_data, indent=4))  # Debug print to check the response structure
+
+        # Safely extract the result and hits
+        hits = response_data.get('result', {}).get('hits', [])
+        total_hits = len(hits)
+
+        # Loop through each hit (result) from the API
+        for index, result in enumerate(hits):
+            ip = result.get('ip', 'N/A')
+            last_updated_at = result.get('last_updated_at', 'N/A')
+
+            # Autonomous system details
+            asn_info = result.get('autonomous_system', {})
+            as_description = asn_info.get('description', 'N/A')
+            asn = asn_info.get('asn', 'N/A')
+            as_country_code = asn_info.get('country_code', 'N/A')
+            as_organization = asn_info.get('name', 'N/A')
+
+            # Location details
+            location = result.get('location', {})
+            city = location.get('city', 'N/A')
+            country = location.get('country', 'N/A')
+            province = location.get('province', 'N/A')  # Corrected from 'region'
+            postal_code = location.get('postal_code', 'N/A')
+            latitude = location.get('coordinates', {}).get('latitude', 'N/A')
+            longitude = location.get('coordinates', {}).get('longitude', 'N/A')
+
+            # Services (ports, protocols, etc.)
+            services = result.get('services', [])
+            for service in services:
+                protocol = service.get('transport_protocol', 'N/A')
+                port = service.get('port', 'N/A')
+                service_name = service.get('service_name', 'N/A')
+
+                # Operating system details
+                operating_system_info = result.get('operating_system', {})
+                operating_system_vendor = operating_system_info.get('vendor', 'N/A')
+                operating_system_family = next((item.get('value') for item in operating_system_info.get('other', []) if item.get('key') == 'family'), 'N/A')
+
+                # Append the parsed result into product_summary
+                product_summary.append({
+                    "IP": ip,
+                    "Last Updated": last_updated_at,
+                    "Autonomous System Description": as_description,
+                    "ASN": asn,
+                    "AS Country Code": as_country_code,
+                    "AS Organization": as_organization,
+                    "City": city,
+                    "Country": country,
+                    "Province": province,
+                    "Postal Code": postal_code,
+                    "Latitude": latitude,
+                    "Longitude": longitude,
+                    "Protocol": protocol,
+                    "Port": port,
+                    "Service Name": service_name,
+                    "Operating System Vendor": operating_system_vendor,
+                    "Operating System Family": operating_system_family
+                })
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching product data from Censys: {str(e)}")
+        product_summary = {"error": str(e)}
+
+    return product_summary
 
 
 

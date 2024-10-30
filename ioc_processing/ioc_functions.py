@@ -46,7 +46,7 @@ from api_interactions.urlscan import (
     submit_url_to_urlscan,
     get_urlscan_report
 )
-from api_interactions.censys import get_censys_data, search_cves_on_censys, search_censys_org, search_censys_by_port
+from api_interactions.censys import get_censys_data, search_cves_on_censys, search_censys_org, search_censys_by_port, search_censys_product_country
 from api.api_keys import censys_api_key, censys_secret, metadefender_api_key
 from api_interactions.borealis import request_borealis, format_borealis_report
 from api_interactions.binaryedge import get_binaryedge_report
@@ -1740,7 +1740,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
         + len(selected_category['cves']) * 2
         + len(selected_category['orgs']) * 2
         + len(selected_category['ports']) * 2
-        + len(selected_category['products']) * 1
+        + len(selected_category['products']) * 2
     )
 
     # Initialize the progress bar
@@ -2749,19 +2749,15 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         progress_bar.value += 1
             
                     # Debugging the report retrieved from Shodan
-                    # print(f"DEBUG: Full Shodan CVE Report: {json.dumps(report_shodan_cve, indent=2)}")
+                    #print(f"DEBUG: Full Shodan CVE Report: {json.dumps(report_shodan_cve, indent=2)}")
             
-                
-
                     # Fetch the Censys CVE report
-                
                     report_censys_cve = search_cves_on_censys(censys_api_key, censys_secret, entry, status_output=status_output, progress_bar=progress_bar)
                     if progress_bar:
                         progress_bar.value += 1
-                    
 
-                
-                    
+                    #print(f"DEBUG: Full Censys CVE Report: {json.dumps(report_censys_cve, indent=2)}")
+                                    
                     total_score = 0
                     breakdown_str = ""
                     verdict = "Not Malicious"  # Default verdict in case there's no valid result
@@ -2895,7 +2891,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                     )
                             else:
                                 combined_report += "    - No CVEs found.\n"
-                            combined_report += "\n"
+                            #combined_report += "\n"
                     else:
                         combined_report += f"Censys Report for {entry}:\nNo results found or invalid report format.\n\n"
 
@@ -2921,8 +2917,6 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     #print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
                     if progress_bar:
                         progress_bar.value += 1
-            
-                
             
                 
                     report_censys_org = search_censys_org(censys_api_key, censys_secret, org_name, status_output=status_output, progress_bar=progress_bar)
@@ -3216,7 +3210,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
 
                 elif category == "products":
-                    print(f"DEBUG: Found 'products' category, proceeding with product search")
+                    #print(f"DEBUG: Found 'products' category, proceeding with product search")
                     
                     # Initialize report and other variables
                     report_shodan_product = None
@@ -3226,6 +3220,13 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     # Perform product search on Shodan
                     report_shodan_product = search_shodan_product_country(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
                     
+                    if progress_bar:
+                        progress_bar.value += 1
+
+                    # Perform product search on Censys
+                    report_censys_product = search_censys_product_country(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                    #print(f"DEBUG: Type of report_censys_product: {type(report_censys_product)}")
+                    #print(f"DEBUG: Content of report_censys_product: {report_censys_product}")                    
                     if progress_bar:
                         progress_bar.value += 1
                     
@@ -3238,6 +3239,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     total_score, score_breakdown, verdict = calculate_total_malicious_score(
                         {
                             "Shodan": report_shodan_product,
+                            "Censys": report_censys_product,
                         },
                         None,  # Borealis is not used for ports, so pass None
                         ioc_type="products"
@@ -3305,6 +3307,52 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             )
                     else:
                         combined_report += f"No results found for product {entry} in {selected_country if selected_country else 'any country'}.\n"
+
+
+                    
+                    
+                    if report_censys_product and isinstance(report_censys_product, list):
+                        combined_report += f"Censys Report for Product {entry} in {selected_country if selected_country else 'any country'}:\n"
+                    
+                        for product_entry in report_censys_product:
+                            combined_report += f"  - IP: {sanitize_and_defang(product_entry.get('IP', 'N/A'))}\n"
+                            combined_report += f"    - Last Updated: {product_entry.get('Last Updated', 'N/A')}\n"
+                            combined_report += f"    - ASN: {product_entry.get('ASN', 'N/A')}\n"
+                            combined_report += f"    - Autonomous System: {product_entry.get('Autonomous System Description', 'N/A')}\n"
+                            combined_report += f"    - ASN Country Code: {product_entry.get('AS Country Code', 'N/A')}\n"
+                            combined_report += f"    - AS Organization: {product_entry.get('AS Organization', 'N/A')}\n"
+                            
+                            # Location details
+                            combined_report += f"    - City: {product_entry.get('City', 'N/A')}\n"
+                            combined_report += f"    - Province: {product_entry.get('Province', 'N/A')}\n"  # Updated from Region to Province
+                            combined_report += f"    - Postal Code: {product_entry.get('Postal Code', 'N/A')}\n"
+                            combined_report += f"    - Country: {product_entry.get('Country', 'N/A')}\n"
+                            combined_report += f"    - Latitude: {product_entry.get('Latitude', 'N/A')}\n"
+                            combined_report += f"    - Longitude: {product_entry.get('Longitude', 'N/A')}\n"
+                            
+                            # Service details
+                            combined_report += f"    - Protocol: {product_entry.get('Protocol', 'N/A')}\n"
+                            combined_report += f"    - Port: {product_entry.get('Port', 'N/A')}\n"
+                            combined_report += f"    - Service Name: {product_entry.get('Service Name', 'N/A')}\n"
+                    
+                            # Operating System details
+                            combined_report += f"    - Operating System Vendor: {product_entry.get('Operating System Vendor', 'N/A')}\n"
+                            combined_report += f"    - Operating System Family: {product_entry.get('Operating System Family', 'N/A')}\n"
+                    
+                            # Optional details for matched services
+                            services = product_entry.get('Services', [])
+                            if services:
+                                combined_report += "    - Services:\n"
+                                for service in services:
+                                    combined_report += f"      - Service Name: {service.get('Service Name', 'N/A')}\n"
+                                    combined_report += f"        - Transport Protocol: {service.get('Protocol', 'N/A')}\n"
+                                    combined_report += f"        - Port: {service.get('Port', 'N/A')}\n"
+                    
+                            combined_report += "\n"
+                    
+                    else:
+                        combined_report += f"Censys Report for Product {entry} in {selected_country if selected_country else 'any country'}:\nNo results found or invalid report format.\n\n"
+                    
                     
                     # Append the score breakdown
                     combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"

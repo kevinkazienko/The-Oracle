@@ -84,8 +84,17 @@ def is_url(s):
     # Updated regular expression to handle subdomains, regions, and complex domains
     return re.match(r"^https?:\/\/([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/[\w\-._~:/?#[\]@!$&'()*+,;=]*)?$", s) is not None
 
-def is_hash(s):
-    return re.match(r"^[a-fA-F0-9]{32}$|^[a-fA-F0-9]{40}$|^[a-fA-F0-9]{64}$", s) is not None
+def is_hash(ioc):
+    # Check for common hash patterns (MD5, SHA1, SHA256)
+    hash_patterns = [
+        r'^[a-fA-F0-9]{32}$',   # MD5
+        r'^[a-fA-F0-9]{40}$',   # SHA1
+        r'^[a-fA-F0-9]{64}$',   # SHA256
+    ]
+    for pattern in hash_patterns:
+        if re.match(pattern, ioc):
+            return True
+    return False
 
 def is_domain(s):
     """
@@ -112,11 +121,7 @@ def is_port(s):
 
 def is_product(s):
     """
-    Detects if the input string is likely a product name.
-    Focuses on patterns with multiple uppercase letters, digits, or special characters.
-    Avoids detecting common organization name patterns.
+    Detects if the input string is likely a product name based on the presence of a prod: tag.
+    This function is now redundant unless it's needed for additional product-specific validation.
     """
-    # Check for mixed-case with at least two uppercase letters or includes digits/special characters
-    if bool(re.search(r'[A-Z]{2,}', s)) or bool(re.search(r'\d', s)):
-        return True
-    return False
+    return s.lower().startswith('prod:')
