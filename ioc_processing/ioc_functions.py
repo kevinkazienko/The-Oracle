@@ -736,12 +736,12 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                     suspicious = ipqs_report.get("suspicious", False)
                     # Weights for each component
                     fraud_weight = 1      # Weight for fraud score
-                    vpn_weight = 10       # VPN increases score by 10 if True
-                    tor_weight = 15       # TOR increases score by 15 if True
-                    proxy_weight = 5      # Proxy increases score by 5 if True
-                    phishing_weight = 20  # Phishing increases score by 20 if True
-                    malware_weight = 30   # Malware increases score by 30 if True
-                    suspicious_weight = 40
+                    vpn_weight = 1       # VPN increases score by 10 if True
+                    tor_weight = 1       # TOR increases score by 15 if True
+                    proxy_weight = 1      # Proxy increases score by 5 if True
+                    phishing_weight = 1  # Phishing increases score by 20 if True
+                    malware_weight = 1   # Malware increases score by 30 if True
+                    suspicious_weight = 1
                 
                     # Calculate total score for IPQualityScore by applying the weights
                     total_ipqs_score = (
@@ -984,12 +984,12 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                     suspicious = ipqs_report.get("suspicious", False)
                     # Weights for each component
                     risk_weight = 1        # Weight for risk score
-                    vpn_weight = 10        # VPN increases score by 10 if True
-                    tor_weight = 15        # TOR increases score by 15 if True
-                    proxy_weight = 5       # Proxy increases score by 5 if True
-                    phishing_weight = 20   # Phishing increases score by 20 if True
-                    malware_weight = 30    # Malware increases score by 30 if True
-                    suspicious_weight = 40
+                    vpn_weight = 1        # VPN increases score by 10 if True
+                    tor_weight = 1        # TOR increases score by 15 if True
+                    proxy_weight = 1       # Proxy increases score by 5 if True
+                    phishing_weight = 1   # Phishing increases score by 20 if True
+                    malware_weight = 1    # Malware increases score by 30 if True
+                    suspicious_weight = 1
                 
                     # Calculate total score for IPQualityScore by applying the weights
                     total_ipqs_score = (
@@ -1425,68 +1425,46 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
 
         
 
-        # Final score scaling: Scale total score to 100
-        scaled_total_score = (total_score / max_possible_score) * 100 if max_possible_score > 0 else 0
-        
-        # Final score and verdict calculation
-        verdict = "Not Malicious"  # Default verdict
-        
-        # Adjust the verdict calculation based on scaled total score for all IOC types
-        if scaled_total_score == 0:
-            verdict = "Not Malicious"
-        elif 1 <= scaled_total_score <= 15:
-            verdict = "Suspicious"
-        elif 16 <= scaled_total_score <= 30:
-            verdict = "Potentially Malicious"
-        elif 31 <= scaled_total_score <= 50:
-            verdict = "Probably Malicious"
-        else:
-            verdict = "Malicious"
-        
-        # Handle specific cases for different IOC types
-        if ioc_type == "ip":
-            # Special case: If the IP belongs to a trusted provider, override verdict to "Not Malicious"
-            if trusted_provider_found:
+            # Example: Calculating scaled score
+            scaled_total_score = (total_score / max_possible_score) * 100 if max_possible_score > 0 else 0
+
+            # Determine verdict based on score
+            if total_score == 0:
+                verdict = "Not Malicious"
+            elif 0 <= scaled_total_score <= 4:
+                verdict = "Not Malicious"
+            elif 5 <= scaled_total_score <= 15:
+                verdict = "Suspicious"
+            elif 16 <= scaled_total_score <= 30:
+                verdict = "Potentially Malicious"
+            elif 31 <= scaled_total_score <= 50:
+                verdict = "Probably Malicious"
+            else:
+                verdict = "Malicious"
+            
+            # Additional handling based on IOC type
+            if ioc_type == "ip" and trusted_provider_found:
                 verdict = "Not Malicious"
                 score_breakdown.append(f"Note: IP belongs to trusted provider ({trusted_provider_found}). Verdict set to 'Not Malicious'.")
-        
-        elif ioc_type in ["url", "domain"]:
-            # For URLs/domains, factor in the malicious count and analysis date in the verdict
-            if malicious_count >= high_malicious_count_threshold:
-                if recent_analysis:
-                    verdict = "Malicious"
-                else:
-                    verdict = "Probably Malicious"
-            elif malicious_count > 0:
-                if malicious_count > (total_sources / 2):
-                    verdict = "Probably Malicious"
-                else:
+            elif ioc_type in ["url", "domain"]:
+                if total_score == 0 and malicious_count == 0:
+                    verdict = "Not Malicious"
+                elif malicious_count >= high_malicious_count_threshold:
+                    verdict = "Malicious" if recent_analysis else "Probably Malicious"
+                elif total_score > 0 and ("trackers" in tags or "external-resources" in tags):
                     verdict = "Suspicious"
+    
+            # Output final score and verdict in the breakdown
+            verdict_str = f"Verdict: {verdict}"
+            total_score_str = f"Total Score: {total_score} out of {max_possible_score} ({scaled_total_score:.2f}%)"
+            
+            # Add verdict and score to the breakdown
+            score_breakdown.insert(0, verdict_str)
+            score_breakdown.insert(1, total_score_str)
+            breakdown_str = "\n".join(score_breakdown)
+            
+            return total_score, breakdown_str, verdict
         
-        elif ioc_type == "hash":
-            # For hashes, the scaled score directly determines the verdict
-            pass  # Verdict already calculated uniformly based on the scaled score
-        
-        # Add trusted provider warning if detected, but do not affect verdict or score
-        if trusted_provider_found:
-            score_breakdown.append(f"  Warning: Hosted on a trusted provider (Provider: {trusted_provider_found}). Proceed with caution...")
-        
-        # Display the final score and verdict at the top of the breakdown
-        verdict_str = f"Verdict: {verdict}"
-        total_score_str = f"Total Score: {total_score} out of {max_possible_score} ({scaled_total_score:.2f}%)\n"
-        
-        # Debugging
-        print(f"DEBUG: Total Score = {total_score}, Verdict = {verdict}, Breakdown = {score_breakdown}")
-        
-        # Append the score and verdict to the top of the breakdown
-        score_breakdown.insert(0, total_score_str)
-        score_breakdown.insert(0, verdict_str)
-        
-        breakdown_str = "\n".join(score_breakdown)
-        
-        return total_score, breakdown_str, verdict
-        
-        pass
     except Exception as e:
         print(f"ERROR: Exception encountered during score calculation: {str(e)}")
         return 0, f"Error during score calculation: {str(e)}", "Unknown"
@@ -1904,9 +1882,11 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     #print(f"DEBUG: trusted_provider_found before appending to verdict = {trusted_provider_found}")
 
                     if trusted_provider_found:
-                        combined_report += f"Verdict: {verdict} (Score: {total_score}) (Belongs to {trusted_provider_found})\n\n"
+                        combined_report += f"Verdict: {verdict} (Score: {total_score}) (Belongs to {trusted_provider_found})\n"
+                        combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
                     else:
-                        combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                        combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
+                        combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
                  
                                         
                         # VirusTotal Report
@@ -2236,9 +2216,11 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
                     if trusted_provider_found:
                         provider_list = ', '.join(trusted_provider_found)
-                        combined_report += f"Verdict: {verdict} (Score: {total_score}) (Hosted on: {provider_list})\n\n"
+                        combined_report += f"Verdict: {verdict} (Score: {total_score}) (Hosted on: {provider_list})\n"
+                        combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
                     else:
-                        combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                        combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
+                        combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
                     # #print(f"DEBUG: trusted_provider_found before appending to verdict = {trusted_provider_found}")
                     # if trusted_provider_found:
                     #     combined_report += f"Verdict: {verdict} (Score: {total_score}) (Hosted on {trusted_provider_found})\n\n"
@@ -2314,7 +2296,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     if isinstance(report_alienvault, dict) and 'error' not in report_alienvault:
                         combined_report += f"\n{format_alienvault_report(report_alienvault)}\n\n"
                     else:
-                        combined_report += "AlienVault OTX Report:\nN/A or Error\n\n"
+                        combined_report += "\nAlienVault OTX Report:\nN/A or Error\n\n"
                 
                     # URLScan Report
                     if report_urlscan and isinstance(report_urlscan, dict):
@@ -2430,7 +2412,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         None,  # Borealis is not used for hashes, so pass None
                         ioc_type="hash"
                     )
-                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
+                    combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
                 
                     # VirusTotal Hash Report
                     if report_vt_hash and report_vt_hash != f"Failed to fetch VirusTotal hash report for {entry}.":
@@ -2772,7 +2755,9 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         None,  # Borealis is not used for CVEs, so pass None
                         ioc_type="cve"
                     )
-                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                    combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
+                    combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
+                    
                 
                     # Check if the Shodan CVE report is valid and process accordingly
                     if report_shodan_cve and isinstance(report_shodan_cve, dict):
