@@ -49,7 +49,7 @@ from api_interactions.urlscan import (
 from api_interactions.censys import get_censys_data, search_cves_on_censys, search_censys_org, search_censys_by_port, search_censys_product_country
 from api.api_keys import censys_api_key, censys_secret, metadefender_api_key
 from api_interactions.borealis import request_borealis, format_borealis_report
-from api_interactions.binaryedge import get_binaryedge_report
+from api_interactions.binaryedge import get_binaryedge_report, search_binaryedge_by_port, search_binaryedge_product
 from api_interactions.metadefender import analyze_with_metadefender, process_metadefender_ip_report, process_metadefender_url_report, process_metadefender_hash_report
 from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report
 from api_interactions.malshare import get_malshare_hash_report
@@ -1739,8 +1739,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
         + len(selected_category['hashes']) * 5  # 4 API calls per hash
         + len(selected_category['cves']) * 2
         + len(selected_category['orgs']) * 2
-        + len(selected_category['ports']) * 2
-        + len(selected_category['products']) * 2
+        + len(selected_category['ports']) * 3
+        + len(selected_category['products']) * 3
     )
 
     # Initialize the progress bar
@@ -3060,6 +3060,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     print(f"DEBUG: Found 'ports' category, proceeding with port search")
                     report_shodan_port = None
                     report_censys_port = None
+                    report_binaryedge_port = None
                     
                     # Use the selected country from the UI, and don't filter if "All" is selected
                     selected_country = selected_country if selected_country != 'All' else None
@@ -3077,6 +3078,11 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     #print(f"DEBUG: search_censys_by_port returned: {report_censys_port}")
                     if progress_bar:
                         progress_bar.value += 1
+
+                    print(f"DEBUG: Calling BinaryEdge for port {entry} in {selected_country}")
+                    report_binaryedge_port = search_binaryedge_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                 
                     
                 
@@ -3089,6 +3095,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         {
                             "Shodan": report_shodan_port,
                             "Censys": report_censys_port,
+                            "BinaryEdge": report_binaryedge_port,
+                            
                         },
                         None,  # Borealis is not used for ports, so pass None
                         ioc_type="port"
@@ -3198,6 +3206,62 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     
                     else:
                         combined_report += f"Censys Report for Port {entry}:\nNo results found or invalid report format.\n\n"
+
+
+                    
+                    if report_binaryedge_port:
+                        combined_report += f"BinaryEdge Report for Port {entry}:\n"
+                        if 'events' in report_binaryedge_port:
+                            for event in report_binaryedge_port['events']:
+                                # Extract target information
+                                ip = event.get('Target IP', 'N/A')
+                                port = event.get('Target Port', 'N/A')
+                                protocol = event.get('Target Protocol', 'N/A')
+                                
+                                # Extract origin information
+                                origin_ip = event.get('Origin IP', 'N/A')
+                                origin_country = event.get('Origin Country', 'N/A')
+                                origin_region = event.get('Origin Region', 'N/A')
+                                
+                                # Use format_date to convert the timestamp
+                                origin_timestamp = format_date(event.get('Origin Timestamp', 'N/A'))
+                    
+                                # Add extracted data to the report
+                                combined_report += f"  - Target IP: {sanitize_and_defang(ip)}\n"
+                                combined_report += f"    - Target Port: {port}\n"
+                                combined_report += f"    - Target Protocol: {protocol}\n"
+                                combined_report += f"    - Origin Country: {origin_country}\n"
+                                combined_report += f"    - Origin IP: {sanitize_and_defang(origin_ip)}\n"
+                                combined_report += f"    - Origin Region: {origin_region}\n"
+                                combined_report += f"    - Origin Timestamp: {origin_timestamp}\n"
+                    
+                                # Extract result information if available
+                                result_info = event.get('result', {}).get('data', {}).get('response', {})
+                                if result_info:
+                                    response_url = result_info.get('url', 'N/A')
+                                    status_info = result_info.get('status', {})
+                                    status_code = status_info.get('code', 'N/A')
+                                    status_message = status_info.get('message', 'N/A')
+                    
+                                    combined_report += f"    - Response URL: {response_url}\n"
+                                    combined_report += f"    - Response Status Code: {status_code}\n"
+                                    combined_report += f"    - Response Message: {status_message}\n"
+                    
+                                    # Extract headers
+                                    headers = result_info.get('headers', {}).get('headers', {})
+                                    combined_report += f"    - Response Headers:\n"
+                                    for header_key, header_value in headers.items():
+                                        combined_report += f"        - {header_key}: {header_value}\n"
+                                    
+                                    # Trim long response body for readability
+                                    body = result_info.get('body', {}).get('content', 'N/A')
+                                    combined_report += f"    - Response Body: {body[:100]}...\n"
+                                
+                                combined_report += "\n"
+                        else:
+                            combined_report += "No results found or invalid report format.\n"
+                    else:
+                        combined_report += "Error querying BinaryEdge.\n\n"
                 
                     # Append score breakdown
                     combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
@@ -3229,6 +3293,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     #print(f"DEBUG: Content of report_censys_product: {report_censys_product}")                    
                     if progress_bar:
                         progress_bar.value += 1
+
+                    report_binaryedge_product = search_binaryedge_product(entry, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                     
 
                     total_score = 0
@@ -3240,6 +3308,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         {
                             "Shodan": report_shodan_product,
                             "Censys": report_censys_product,
+                            "BinaryEdge": report_binaryedge_product,
                         },
                         None,  # Borealis is not used for ports, so pass None
                         ioc_type="products"
@@ -3352,6 +3421,62 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     
                     else:
                         combined_report += f"Censys Report for Product {entry} in {selected_country if selected_country else 'any country'}:\nNo results found or invalid report format.\n\n"
+
+
+                    # Integrate this into the main reporting function
+                    if report_binaryedge_product:
+                        # Display the summary directly from the BinaryEdge report
+                        combined_report += report_binaryedge_product.get("summary", "No summary available") + "\n\n"
+                    
+                        # Process events (matches)
+                        for event in report_binaryedge_product.get('events', []):
+                            # Extract target information
+                            target = event.get('target', {})
+                            target_ip = target.get('ip', 'N/A')
+                            target_port = target.get('port', 'N/A')
+                            target_protocol = target.get('protocol', 'N/A')
+                    
+                            # Extract origin information
+                            origin = event.get('origin', {})
+                            origin_ip = origin.get('ip', 'N/A')
+                            origin_country = origin.get('country', 'N/A')
+                            origin_region = origin.get('region', 'N/A')
+                            origin_timestamp = format_date(origin.get('ts', 'N/A'))
+                            origin_port = origin.get('port', 'N/A')
+                    
+                            # Add extracted data to the report
+                            combined_report += (
+                                f"  - Target IP: {sanitize_and_defang(target_ip)}\n"
+                                f"    - Target Port: {target_port}\n"
+                                f"    - Target Protocol: {target_protocol}\n"
+                                f"    - Origin Country: {origin_country}\n"
+                                f"    - Origin IP: {sanitize_and_defang(origin_ip)}\n"
+                                f"    - Origin Region: {origin_region}\n"
+                                f"    - Origin Timestamp: {origin_timestamp}\n"
+                                f"    - Origin Port: {origin_port}\n"
+                            )
+                    
+                            # Extract service information
+                            service = event.get('result', {}).get('data', {}).get('service', {})
+                            service_name = service.get('name', 'N/A')
+                            service_product = service.get('product', 'N/A')
+                            service_version = service.get('version', 'N/A')
+                            service_extrainfo = service.get('extrainfo', 'N/A')
+                            service_banner = service.get('banner', 'N/A')
+                            service_state = event.get('result', {}).get('data', {}).get('state', {}).get('state', 'N/A')
+                    
+                            # Add service information to the report
+                            combined_report += (
+                                f"    - Service Name: {service_name}\n"
+                                f"    - Service Product: {service_product}\n"
+                                f"    - Service Version: {service_version}\n"
+                                f"    - Service Extra Info: {service_extrainfo}\n"
+                                f"    - Service Banner: {service_banner}\n"
+                                f"    - Service State: {service_state}\n"
+                                + "\n"
+                            )
+                    else:
+                        combined_report += f"No results found for product {entry} on BinaryEdge.\n"
                     
                     
                     # Append the score breakdown

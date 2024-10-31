@@ -161,7 +161,7 @@ def search_shodan_cve_country(cve, country, status_output=None, progress_bar=Non
         top_os = data.get("facets", {}).get("os", [])
 
         # Extract limited matches (limit to 1 or 2)
-        limited_matches = data.get("matches", [])#[:10]
+        limited_matches = data.get("matches", [])[:20]
 
 
         # Return both facets and the limited number of matches

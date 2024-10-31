@@ -321,7 +321,7 @@ def search_censys_by_port(censys_api_key, censys_secret, port, country=None, sta
             clear_output(wait=True)
             display(HTML(f'<b>Searching Censys for port {port} in {country or "all countries"}...</b>'))
             display(progress_bar)
-    print(f"Searching Censys for query: {port}")
+    print(f"Searching Censys for port {port}")
 
     API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
     UID = censys_api_key

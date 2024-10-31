@@ -97,6 +97,8 @@ The script requires API keys for all validation sources. CCCS (Canadian Center f
 
 Replace the placeholders with your actual API keys in the `api/api_keys.py`.
 
+Links to the registration pages for all validation sources can be found in the Wiki.
+
 ### Usage
 
 To use this tool, simply run the script with Python.
