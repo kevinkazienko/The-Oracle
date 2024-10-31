@@ -572,8 +572,8 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
 
     # Threshold to consider high risk from a single source
     high_malicious_count_threshold = 3  # Adjust as necessary
-    malicious_score_threshold = 50  # Adjust as needed
-    probably_malicious_score_threshold = 30  # Adjust as needed
+    malicious_score_threshold = 70  # Adjust as needed
+    probably_malicious_score_threshold = 50  # Adjust as needed
 
     # Make current_date timezone-aware (UTC)
     current_date = datetime.now(timezone.utc)
@@ -1431,12 +1431,10 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
             # Determine verdict based on score
             if total_score == 0:
                 verdict = "Not Malicious"
-            elif 0 <= scaled_total_score <= 4:
+            elif 0 <= scaled_total_score <= 15:
                 verdict = "Not Malicious"
-            elif 5 <= scaled_total_score <= 15:
-                verdict = "Suspicious"
             elif 16 <= scaled_total_score <= 30:
-                verdict = "Potentially Malicious"
+                verdict = "Suspicious"
             elif 31 <= scaled_total_score <= 50:
                 verdict = "Probably Malicious"
             else:
@@ -1468,6 +1466,8 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     except Exception as e:
         print(f"ERROR: Exception encountered during score calculation: {str(e)}")
         return 0, f"Error during score calculation: {str(e)}", "Unknown"
+
+
 
 def process_categories_field(categories):
     """
