@@ -30,10 +30,6 @@ The Oracle is designed for security analysts, researchers and enthusiasts - faci
 - [Usage](#usage)
 - [Future Improvements](#future-improvements)
 - [Version History](#version-history)
-- [Troubleshooting](#troubleshooting)
-- [Testing](#testing)
-- [Flow Chart](#flow-chart)
-- [Big thanks!](#big-thanks)
 
 ## Features
 
@@ -52,8 +48,9 @@ The Oracle is designed for security analysts, researchers and enthusiasts - faci
 - **Input Sanitization**: Enhanced input processing to remove unnecessary port numbers and other artifacts. [12/03/2023]
 - **Report Output Defanging**: Enhanced output reporting with IP and domain/URL de-weaponizing.
 - **Automatic IOC Type Detection**: The script now automatically detects the type of IOC being searched.
-- **Search CVE's With Shodan**: Search for devices vulnerable to CVE's using Shodan's vuln filter. [10/25/2024]
-- **Search Organizations With Shodan**: Search Shodan using the org filter. [10/25/2024]
+- **Search CVE's**: Search for devices vulnerable to CVE's using Shodan's vuln filter. [10/25/2024]
+- **Search Organizations**: Search Shodan using the org filter. [10/25/2024]
+- **Search Port and Products**: Search by port number or product name and country. [10/29/2024]
 
 ## Getting Started
 
@@ -149,3 +146,6 @@ Revamped UI, auto IOC type detection for searches.
 
 **V2.9.7**
 Added Port, Product, Organization and CVE search capabilities for Shodan and Censys.
+
+**V2.9.9**
+Added BinaryEdge to Port and Product searches.
