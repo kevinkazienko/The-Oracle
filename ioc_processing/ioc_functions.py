@@ -575,15 +575,19 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
 
             # Extract Borealis report details
             borealis_breakdown = ""
+            borealis_score = 0  # Set a default score for Borealis if not available
             if borealis_report and isinstance(borealis_report, dict):
                 try:
+                    # Attempt to extract details if available
                     borealis_breakdown, borealis_score = extract_borealis_info(borealis_report)
                     total_score += borealis_score
-                    # score_breakdown.append(f"Borealis Report:\n{borealis_breakdown}")
                 except Exception as e:
-                    print(f"DEBUG: Skipping Borealis report due to error during extraction: {e}")
+                    # Log the error and continue without adding borealis_score
+                    print(f"DEBUG: Error processing Borealis report: {e}")
+                    borealis_breakdown = "Borealis report could not be processed due to an error."
             else:
-                print("DEBUG: Borealis report is None or not a valid dictionary, skipping Borealis processing.")
+                print("DEBUG: Borealis report is missing or invalid.")
+                borealis_breakdown = "No Borealis report data available."
             
             # IP-based IOC
             if ioc_type == "ip":
@@ -877,322 +881,338 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     
             # URL and Domain-based IOC
             elif ioc_type in ["url", "domain"]:
+                # VirusTotal parsing
                 if 'VirusTotal' in reports:
                     vt_report = reports['VirusTotal']
-                    malicious_count, suspicious_count, last_analysis_date, crowdsourced_context, *_ = extract_vt_analysis(vt_report)
-                
-                    # Calculate the VirusTotal score based on malicious and suspicious counts
-                    vt_score = (malicious_count * 1) + (suspicious_count * 0.5)  # Weight for malicious and suspicious indicators
-                    vt_weighted_score = calculate_vendor_score("VirusTotal", vt_score, last_analysis_date)
-                    total_score += vt_weighted_score
-                
-                    # Safely extract additional fields with defaults
-                    tags = ', '.join(vt_report['data']['attributes'].get('tags', [])) if vt_report['data']['attributes'].get('tags') else 'N/A'
-                    registrar = vt_report['data']['attributes'].get('registrar', 'N/A')
-                    creation_date = vt_report['data']['attributes'].get('creation_date', 'N/A')
-                    
-                    # Format creation date if available
-                    if creation_date != 'N/A':
-                        creation_date = format_date(creation_date)
-                
-                    # Extract and process categories and popularity ranks
-                    categories = vt_report.get('data', {}).get('attributes', {}).get('categories', {})
-                    categories_str = process_dynamic_field(categories)
-                    popularity_ranks = vt_report.get('data', {}).get('attributes', {}).get('popularity_ranks', {})
-                    popularity_str = process_dynamic_field(popularity_ranks)
-                
-                    # Append VirusTotal details to the score breakdown
-                    score_breakdown.append(f"VirusTotal:\n  Malicious={malicious_count}\n  Suspicious={suspicious_count}")
-                    score_breakdown.append(f"  Tags: {tags}")
-                    score_breakdown.append(f"  Categories: {categories_str}")
-                    score_breakdown.append(f"  Popularity Ranks: {popularity_str}")
-                    score_breakdown.append(f"  Registrar: {registrar}")
-                    score_breakdown.append(f"  Creation Date: {creation_date}")
-                    score_breakdown.append(f"  Last Analysis Date: {last_analysis_date.strftime('%Y-%m-%d %H:%M:%S') if last_analysis_date else 'N/A'}")
-                    
-                    # Last downloaded file from VirusTotal, if available
-                    last_downloaded_file_hash = vt_report['data']['attributes'].get('last_http_response_content_sha256', None)
-                    last_downloaded_file_info = "No last downloaded file found"
-                    
-                    if last_downloaded_file_hash:
-                        # Attempt to retrieve file details for the last downloaded file
-                        file_report = get_hash_report(last_downloaded_file_hash, status_output=status_output, progress_bar=progress_bar if 'progress_bar' in locals() else None)
-                        
-                        if file_report:
-                            # Extract and format file properties
-                            file_name = file_report['basic_properties'].get('file_name', 'N/A')
-                            file_type = file_report['basic_properties'].get('file_type', 'N/A')
-                            detection_count = len(file_report.get('malicious_vendors', []))
-                            total_vendors = file_report.get('basic_properties', {}).get('total_av_engines', 63)
-                            file_analysis_date = file_report['basic_properties'].get('last_analysis_date', 'N/A')
-                            
-                            detection_info = f"{detection_count}/{total_vendors} security vendors detected this file"
-                            
-                            last_downloaded_file_info = (
-                                f"  {file_name} of type {file_type}\n"
-                                f"  with sha256 {last_downloaded_file_hash}\n  detected by {detection_info}\n"
-                                f"  on {file_analysis_date} UTC"
-                            )
+                    last_analysis_date_str = None
+                    try:
+                        # Extract main data from VirusTotal
+                        malicious_count, suspicious_count, last_analysis_date, crowdsourced_context, *_ = extract_vt_analysis(vt_report)
+                        if isinstance(last_analysis_date_str, str):
+                            last_analysis_date = datetime.fromisoformat(last_analysis_date_str.replace("Z", "+00:00"))
                         else:
-                            last_downloaded_file_info = f"Last downloaded file SHA256: {last_downloaded_file_hash} (No additional details found)"
-                    
-                    # Add last downloaded file info to the end of the VirusTotal section
-                    score_breakdown.append(f"  Last Downloaded File:\n{last_downloaded_file_info}")
-                    
-                    # Process crowdsourced context, if available
-                    if crowdsourced_context != 'N/A':
-                        crowdsourced_context_formatted = format_crowdsourced_context(crowdsourced_context)
-                        total_score += 15  # Additional score contribution for malicious indication in crowdsourced context
-                        score_breakdown.append(f"  Crowdsourced Context:\n  {crowdsourced_context_formatted}")
-    
+                            last_analysis_date = last_analysis_date_str
+                        
+                        vt_score = (malicious_count * 1) + (suspicious_count * 0.5)
+                        vt_weighted_score = calculate_vendor_score("VirusTotal", vt_score, last_analysis_date)
+                        total_score += vt_weighted_score
+                
+                        # Extract and safely format additional fields with defaults
+                        tags = ', '.join(vt_report['data']['attributes'].get('tags', [])) if vt_report['data']['attributes'].get('tags') else 'N/A'
+                        registrar = vt_report['data']['attributes'].get('registrar', 'N/A')
+                        creation_date = format_date(vt_report['data']['attributes'].get('creation_date', 'N/A'))
+                        categories_str = process_dynamic_field(vt_report.get('data', {}).get('attributes', {}).get('categories', {}))
+                        popularity_str = process_dynamic_field(vt_report.get('data', {}).get('attributes', {}).get('popularity_ranks', {}))
+                
+                        # Append VirusTotal details to the breakdown
+                        score_breakdown.append(f"VirusTotal:\n  Malicious={malicious_count}\n  Suspicious={suspicious_count}")
+                        score_breakdown.append(f"  Tags: {tags}")
+                        score_breakdown.append(f"  Categories: {categories_str}")
+                        score_breakdown.append(f"  Popularity Ranks: {popularity_str}")
+                        score_breakdown.append(f"  Registrar: {registrar}")
+                        score_breakdown.append(f"  Creation Date: {creation_date}")
+                        score_breakdown.append(f"  Last Analysis Date: {last_analysis_date.strftime('%Y-%m-%d %H:%M:%S') if last_analysis_date else 'N/A'}")
+                
+                        # Last downloaded file info
+                        last_downloaded_file_hash = vt_report['data']['attributes'].get('last_http_response_content_sha256', None)
+                        last_downloaded_file_info = "No last downloaded file found"
+                
+                        if last_downloaded_file_hash:
+                            try:
+                                # Attempt to retrieve the file report based on hash
+                                file_report = get_hash_report(last_downloaded_file_hash, status_output=status_output, progress_bar=progress_bar)
+                                
+                                if file_report and isinstance(file_report, dict):
+                                    file_name = file_report['basic_properties'].get('file_name', 'N/A')
+                                    file_type = file_report['basic_properties'].get('file_type', 'N/A')
+                                    detection_count = len(file_report.get('malicious_vendors', []))
+                                    total_vendors = file_report['basic_properties'].get('total_av_engines', 63)
+                                    file_analysis_date = file_report['basic_properties'].get('last_analysis_date', 'N/A')
+                
+                                    detection_info = f"{detection_count}/{total_vendors} security vendors detected this file"
+                                    last_downloaded_file_info = (
+                                        f"  {file_name} of type {file_type}\n"
+                                        f"  with sha256 {last_downloaded_file_hash}\n  detected by {detection_info}\n"
+                                        f"  on {file_analysis_date} UTC"
+                                    )
+                                else:
+                                    last_downloaded_file_info = f"Last downloaded file SHA256: {last_downloaded_file_hash} (No details found)"
+                            except Exception as e:
+                                print(f"DEBUG: Error fetching file report for hash {last_downloaded_file_hash}: {e}")
+                                last_downloaded_file_info = f"Last downloaded file SHA256: {last_downloaded_file_hash} (Error fetching details)"
+                
+                        score_breakdown.append(f"  Last Downloaded File:\n{last_downloaded_file_info}")
+                
+                        # Crowdsourced context
+                        if crowdsourced_context != 'N/A':
+                            crowdsourced_context_formatted = format_crowdsourced_context(crowdsourced_context)
+                            total_score += 15  # Additional score for malicious crowdsourced context
+                            score_breakdown.append(f"  Crowdsourced Context:\n  {crowdsourced_context_formatted}")
+                    except Exception as e:
+                        print(f"DEBUG: Error in VirusTotal parsing: {e}")
+            
                 # URLScan parsing
                 if 'URLScan' in reports:
                     urlscan_report = reports.get("URLScan", {})
                     if isinstance(urlscan_report, dict):
-                        # Check if the domain is resolving
-                        if not urlscan_report.get('Resolving', True):
-                            score_breakdown.append("URLScan:\n  The domain isn't resolving. No malicious score.")
-                        else:
-                            # Extract relevant fields
-                            malicious_urls = urlscan_report.get('Malicious Score', 0)
-                            tls_issuer = urlscan_report.get('TLS Issuer', 'N/A')
-                            tls_age = urlscan_report.get('TLS Age (days)', 'N/A')
-                            redirected = urlscan_report.get('Redirected', 'N/A')
-                            asn = str(urlscan_report.get("ASN", ""))
-                            organization = urlscan_report.get("Organization", "")
-                            domain = urlscan_report.get("Domain", "N/A")
-                            isp = urlscan_report.get("ISP", "N/A")
-                            last_analysis_date = urlscan_report.get("Last Analysis Date", "N/A")
-                            
-                            # Calculate URLScan score contribution
-                            urlscan_weighted_score = calculate_vendor_score("URLScan", malicious_urls, last_analysis_date)
-                            total_score += urlscan_weighted_score
-                            total_sources += 1  # Increment total source count
-                            malicious_count += 1 if malicious_urls > 0 else 0  # Mark as malicious if any malicious URLs detected
+                        try:
+                            if not urlscan_report.get('Resolving', True):
+                                score_breakdown.append("URLScan:\n  The domain isn't resolving. No malicious score.")
+                            else:
+                                malicious_urls = urlscan_report.get('Malicious Score', 0)
+                                tls_issuer = urlscan_report.get('TLS Issuer', 'N/A')
+                                tls_age = urlscan_report.get('TLS Age (days)', 'N/A')
+                                redirected = urlscan_report.get('Redirected', 'N/A')
+                                asn = str(urlscan_report.get("ASN", ""))
+                                organization = urlscan_report.get("Organization", "")
+                                domain = urlscan_report.get("Domain", "N/A")
+                                isp = urlscan_report.get("ISP", "N/A")
+                                last_analysis_date_str = urlscan_report.get("Last Analysis Date", "N/A")
+                                
+                                # Convert last_analysis_date to datetime if it's a string
+                                if isinstance(last_analysis_date_str, str) and last_analysis_date_str != "N/A":
+                                    try:
+                                        last_analysis_date = datetime.fromisoformat(last_analysis_date_str.replace("Z", "+00:00"))
+                                    except ValueError:
+                                        print(f"DEBUG: Unable to parse last_analysis_date '{last_analysis_date_str}' as datetime")
+                                        last_analysis_date = None
+                                else:
+                                    last_analysis_date = last_analysis_date_str  # Keep as is if already datetime or not available
+                                
+                                # Calculate URLScan score contribution
+                                urlscan_weighted_score = calculate_vendor_score("URLScan", malicious_urls, last_analysis_date)
+                                total_score += urlscan_weighted_score
+                                malicious_count += 1 if malicious_urls > 0 else 0
                 
-                            # Append URLScan details to the breakdown
-                            score_breakdown.append(
-                                f"URLScan:\n  Malicious Score={malicious_urls}\n  ISP={isp}\n"
-                                f"  TLS Issuer={tls_issuer}\n  TLS Age={tls_age} days\n"
-                                f"  Redirected={redirected}\n  Last Analysis Date={last_analysis_date}\n"
-                                f"  URLScan Score Contribution (Weighted): {urlscan_weighted_score}"
+                                # Append URLScan details to the breakdown
+                                score_breakdown.append(
+                                    f"URLScan:\n  Malicious Score={malicious_urls}\n  ISP={isp}\n"
+                                    f"  TLS Issuer={tls_issuer}\n  TLS Age={tls_age} days\n"
+                                    f"  Redirected={redirected}\n  Last Analysis Date={last_analysis_date_str}\n"
+                                    f"  URLScan Score Contribution (Weighted): {urlscan_weighted_score}"
+                                )
+                
+                                # Trusted provider detection
+                                provider = check_trusted_provider(asn, organization, isp)
+                                if provider:
+                                    trusted_provider_found = provider
+                                    score_breakdown.append(f"  Domain is hosted on a trusted provider (ISP: {trusted_provider_found})...Proceed with caution")
+                                else:
+                                    score_breakdown.append("  No Trusted Provider Detected in URLScan")
+                        except Exception as e:
+                            print(f"DEBUG: Error in URLScan parsing: {e}")
+                    else:
+                        score_breakdown.append("URLScan: No data available")
+            
+                # IPQualityScore parsing for URLs/Domains
+                if 'IPQualityScore' in reports:
+                    ipqs_report = reports.get("IPQualityScore", {})
+                    if isinstance(ipqs_report, dict):
+                        try:
+                            score_ipqs = int(ipqs_report.get("risk_score", 0))
+                            vpn = ipqs_report.get("vpn", False)
+                            tor = ipqs_report.get("tor", False)
+                            proxy = ipqs_report.get("proxy", False)
+                            phishing = ipqs_report.get("phishing", False)
+                            malware = ipqs_report.get("malware", False)
+                            server = ipqs_report.get("server", "N/A")
+                            suspicious = ipqs_report.get("suspicious", False)
+            
+                            total_ipqs_score = (
+                                score_ipqs * 1 +
+                                (10 if vpn else 0) +
+                                (15 if tor else 0) +
+                                (5 if proxy else 0) +
+                                (20 if phishing else 0) +
+                                (30 if malware else 0) +
+                                (10 if suspicious else 0)
                             )
-                
-                            # Trusted provider detection
-                            provider = check_trusted_provider(asn, organization, isp)
+            
+                            ipqs_weighted_score = calculate_vendor_score("IPQualityScore", total_ipqs_score)
+                            total_score += ipqs_weighted_score
+                            malicious_count += 1 if total_ipqs_score > 0 else 0
+            
+                            score_breakdown.append(
+                                f"IPQualityScore:\n  Risk Score={score_ipqs}\n  VPN={vpn}\n"
+                                f"  Tor={tor}\n  Proxy={proxy}\n  Phishing={phishing}\n"
+                                f"  Malware={malware}\n  Server={server}\n  Suspicious={suspicious}\n"
+                                f"  IPQS Score Contribution (Weighted): {ipqs_weighted_score}"
+                            )
+            
+                            provider = check_trusted_provider("", "", server)
                             if provider:
                                 trusted_provider_found = provider
                                 score_breakdown.append(f"  Domain is hosted on a trusted provider (ISP: {trusted_provider_found})...Proceed with caution")
                             else:
-                                score_breakdown.append("  No Trusted Provider Detected in URLScan")
-                    else:
-                        score_breakdown.append("URLScan: No data available")
-    
-                # IPQualityScore parsing for URLs/Domains
-                if 'IPQualityScore' in reports:
-                    ipqs_report = reports.get("IPQualityScore", {})
-                    
-                    # Parse if IPQualityScore report is in string format
-                    if isinstance(ipqs_report, str):
-                        ipqs_report = parse_ipqualityscore_report(ipqs_report)
-                    
-                    if isinstance(ipqs_report, dict) and ipqs_report:
-                        # Extract relevant fields from IPQualityScore report
-                        score_ipqs = int(ipqs_report.get("risk_score", 0))  # Risk score
-                        vpn = ipqs_report.get("vpn", False)                 # VPN flag
-                        tor = ipqs_report.get("tor", False)                 # TOR flag
-                        proxy = ipqs_report.get("proxy", False)             # Proxy flag
-                        phishing = ipqs_report.get("phishing", False)       # Phishing flag
-                        malware = ipqs_report.get("malware", False)         # Malware flag
-                        server = ipqs_report.get("server", "N/A")
-                        suspicious = ipqs_report.get("suspicious", False)
-                
-                        # Define weights for IPQualityScore components
-                        risk_weight = 1         # Base weight for risk score
-                        vpn_weight = 10 if vpn else 0
-                        tor_weight = 15 if tor else 0
-                        proxy_weight = 5 if proxy else 0
-                        phishing_weight = 20 if phishing else 0
-                        malware_weight = 30 if malware else 0
-                        suspicious_weight = 10 if suspicious else 0
-                
-                        # Calculate the total IPQualityScore contribution
-                        total_ipqs_score = (
-                            score_ipqs * risk_weight +
-                            vpn_weight +
-                            tor_weight +
-                            proxy_weight +
-                            phishing_weight +
-                            malware_weight +
-                            suspicious_weight
-                        )
-                
-                        # Apply vendor weighting and add to total score
-                        ipqs_weighted_score = calculate_vendor_score("IPQualityScore", total_ipqs_score)
-                        total_score += ipqs_weighted_score
-                        malicious_count += 1 if total_ipqs_score > 0 else 0  # Mark as malicious if any score contribution is present
-                
-                        # Append IPQualityScore details to the breakdown
-                        score_breakdown.append(
-                            f"IPQualityScore:\n  Risk Score={score_ipqs}\n  VPN={vpn}\n"
-                            f"  Tor={tor}\n  Proxy={proxy}\n  Phishing={phishing}\n"
-                            f"  Malware={malware}\n  Server={server}\n  Suspicious={suspicious}\n"
-                            f"  IPQS Score Contribution (Weighted): {ipqs_weighted_score}"
-                        )
-                
-                        # Check for a trusted provider using server information
-                        provider = check_trusted_provider("", "", server)
-                        if provider:
-                            trusted_provider_found = provider
-                            score_breakdown.append(f"  Domain is hosted on a trusted provider (ISP: {trusted_provider_found})...Proceed with caution")
-                        else:
-                            score_breakdown.append("  No Trusted Provider Detected in IPQualityScore")
+                                score_breakdown.append("  No Trusted Provider Detected in IPQualityScore")
+                        except Exception as e:
+                            print(f"DEBUG: Error in IPQualityScore parsing: {e}")
                     else:
                         score_breakdown.append("IPQualityScore: No data available")
-    
+                
                 # AlienVault parsing for URLs/Domains
                 if 'AlienVault' in reports:
                     alienvault_report = reports.get("AlienVault", {})
                     if isinstance(alienvault_report, dict):
-                        # Extract relevant fields from AlienVault report
-                        pulses = alienvault_report.get("pulse_count", 0)
-                        malware_families = alienvault_report.get("malware_families", 0)
-                        asn = str(alienvault_report.get("asn", ""))
-                        organization = alienvault_report.get("organization", "")
-                        domain = alienvault_report.get("domain", "N/A")
-                        isp = alienvault_report.get("isp", "N/A")
-                        indicator = alienvault_report.get("indicator", "N/A")
-                        
-                        # Increment malicious count and sources if any malicious data is present
-                        total_sources += 1
-                        if pulses + malware_families > 0:
-                            malicious_count += 1
-                
-                        # Calculate AlienVault score contribution based on pulses and malware families
-                        alienvault_score = (pulses * 1) + (malware_families * 2)  # Weight pulses and malware families
-                        alienvault_weighted_score = calculate_vendor_score("AlienVault", alienvault_score)
-                        total_score += alienvault_weighted_score
-                
-                        # Add AlienVault details to the breakdown
-                        score_breakdown.append(
-                            f"AlienVault:\n  Pulses={pulses}\n  Malware Families={malware_families}\n"
-                            f"  ASN={asn}\n  Organization={organization}\n  Domain={domain}\n  ISP={isp}\n"
-                            f"  AlienVault Score Contribution (Weighted): {alienvault_weighted_score}"
-                        )
-                
-                        # Trusted provider detection
-                        provider = check_trusted_provider(asn, organization, isp)
-                        if provider:
-                            trusted_provider_found = provider
-                            score_breakdown.append(f"  Domain is hosted on a trusted provider: {trusted_provider_found}...Proceed with caution")
-                        else:
-                            score_breakdown.append("  No Trusted Provider Detected in AlienVault")
+                        try:
+                            pulses = alienvault_report.get("pulse_count", 0)
+                            malware_families = alienvault_report.get("malware_families", 0)
+                            asn = str(alienvault_report.get("asn", ""))
+                            organization = alienvault_report.get("organization", "")
+                            domain = alienvault_report.get("domain", "N/A")
+                            isp = alienvault_report.get("isp", "N/A")
+            
+                            alienvault_score = (pulses * 1) + (malware_families * 2)
+                            alienvault_weighted_score = calculate_vendor_score("AlienVault", alienvault_score)
+                            total_score += alienvault_weighted_score
+            
+                            score_breakdown.append(
+                                f"AlienVault:\n  Pulses={pulses}\n  Malware Families={malware_families}\n"
+                                f"  ASN={asn}\n  Organization={organization}\n  Domain={domain}\n  ISP={isp}\n"
+                                f"  AlienVault Score Contribution (Weighted): {alienvault_weighted_score}"
+                            )
+            
+                            provider = check_trusted_provider(asn, organization, isp)
+                            if provider:
+                                trusted_provider_found = provider
+                                score_breakdown.append(f"  Domain is hosted on a trusted provider: {trusted_provider_found}...Proceed with caution")
+                            else:
+                                score_breakdown.append("  No Trusted Provider Detected in AlienVault")
+                        except Exception as e:
+                            print(f"DEBUG: Error in AlienVault parsing: {e}")
                     else:
                         score_breakdown.append("AlienVault: No data available")
-    
+            
                 # BinaryEdge parsing for URLs/Domains
                 if 'BinaryEdge' in reports:
                     binaryedge_report = reports.get("BinaryEdge", {})
                     if isinstance(binaryedge_report, dict):
-                        # Extract the total event count
-                        events = binaryedge_report.get('total', 0)
-                        
-                        # Calculate BinaryEdge score based on events
-                        binaryedge_weighted_score = calculate_vendor_score("BinaryEdge", events)
-                        total_score += binaryedge_weighted_score
-                        
-                        # Append BinaryEdge details to the breakdown
-                        score_breakdown.append(f"BinaryEdge:\n  Total Events={events}\n  BinaryEdge Score Contribution (Weighted): {binaryedge_weighted_score}")
-                        
-                        # Include additional parsed details if available
-                        parsed_binaryedge_info = parse_binaryedge_report(binaryedge_report, ioc_type)
-                        score_breakdown.append(f"  Details:\n{parsed_binaryedge_info}")
+                        try:
+                            events = binaryedge_report.get('total', 0)
+                            binaryedge_weighted_score = calculate_vendor_score("BinaryEdge", events)
+                            total_score += binaryedge_weighted_score
+                            score_breakdown.append(f"BinaryEdge:\n  Total Events={events}\n  BinaryEdge Score Contribution (Weighted): {binaryedge_weighted_score}")
+                            
+                            parsed_binaryedge_info = parse_binaryedge_report(binaryedge_report, ioc_type)
+                            score_breakdown.append(f"  Details:\n{parsed_binaryedge_info}")
+                        except Exception as e:
+                            print(f"DEBUG: Error in BinaryEdge parsing: {e}")
                     else:
                         score_breakdown.append("BinaryEdge: No data available")
-    
+            
                 # Metadefender parsing for URLs/Domains
                 if 'MetaDefender' in reports:
                     metadefender_report = reports.get("MetaDefender", {})
                     if isinstance(metadefender_report, dict):
-                        detected_by = metadefender_report.get('detected_by', 0)
-                        
-                        # Calculate MetaDefender score based on detections
-                        metadefender_weighted_score = calculate_vendor_score("MetaDefender", detected_by * 3)
-                        total_score += metadefender_weighted_score
-                        
-                        # Append MetaDefender details to the breakdown
-                        score_breakdown.append(f"MetaDefender:\n  Detected By={detected_by}\n  MetaDefender Score Contribution (Weighted): {metadefender_weighted_score}")
+                        try:
+                            detected_by = metadefender_report.get('detected_by', 0)
+                            metadefender_weighted_score = calculate_vendor_score("MetaDefender", detected_by * 3)
+                            total_score += metadefender_weighted_score
+                            score_breakdown.append(f"MetaDefender:\n  Detected By={detected_by}\n  MetaDefender Score Contribution (Weighted): {metadefender_weighted_score}")
+                        except Exception as e:
+                            print(f"DEBUG: Error in MetaDefender parsing: {e}")
                     else:
                         score_breakdown.append("MetaDefender: No data available")
-    
-                # Append Borealis info if present
+            
+                # Borealis-related sections (AUWL, AlphabetSoup, etc.)
                 if borealis_breakdown:
-                    score_breakdown.append(f"Borealis Report:\n{borealis_breakdown}")
-    
-    
-                # AUWL Section
+                    try:
+                        score_breakdown.append(f"Borealis Report:\n{borealis_breakdown}")
+                    except Exception as e:
+                        print(f"DEBUG: Error in Borealis parsing: {e}")
+            
+                # AUWL parsing for URLs/Domains
                 if "AUWL" in borealis_report:
-                    auwl_report = borealis_report.get("AUWL", [])
-                    phishing_count = 0
-                    total_auwl_clusters = len(auwl_report)
-                    
-                    for cluster in auwl_report:
-                        cluster_name = cluster.get('clusterName', 'N/A')
-                        cluster_category = cluster.get('clusterCategory', 'N/A')
-                        if cluster_category.lower() == "phishing":
-                            phishing_count += 1
-                        score_breakdown.append(f"AUWL Cluster: {cluster_name}, Category: {cluster_category}")
-                    
-                    # Adjust score based on phishing clusters
-                    auwl_weighted_score = calculate_vendor_score("AUWL", phishing_count * 1)
-                    total_score += auwl_weighted_score
-                    malicious_count += phishing_count
+                    try:
+                        auwl_report = borealis_report.get("AUWL", [])
+                        phishing_count = 0
+                        for cluster in auwl_report:
+                            cluster_name = cluster.get('clusterName', 'N/A')
+                            cluster_category = cluster.get('clusterCategory', 'N/A')
+                            if cluster_category.lower() == "phishing":
+                                phishing_count += 1
+                            score_breakdown.append(f"AUWL Cluster: {cluster_name}, Category: {cluster_category}")
+                        
+                        auwl_weighted_score = calculate_vendor_score("AUWL", phishing_count)
+                        total_score += auwl_weighted_score
+                        malicious_count += phishing_count
+                        score_breakdown.append(f"AUWL: - Score Contribution: {auwl_weighted_score}")
+                    except Exception as e:
+                        print(f"DEBUG: Error in AUWL parsing: {e}")
                 else:
                     score_breakdown.append("AUWL: No relevant data found.")
-    
-    
+            
                 # AlphabetSoup parsing (DGA detection)
                 if "ALPHABETSOUP" in borealis_report:
-                    alphabetsoup_report = borealis_report.get("ALPHABETSOUP", {})
-                    dga_detected = alphabetsoup_report.get("dga_detected", False)
+                    try:
+                        alphabetsoup_report = borealis_report.get("ALPHABETSOUP", {})
+                        
+                        # Check if DGA is detected
+                        dga_detected = alphabetsoup_report.get("isDGA", False)
+                        
+                        if dga_detected:
+                            # If DGA is detected, add a score contribution
+                            alphabetsoup_weighted_score = calculate_vendor_score("ALPHABETSOUP", 1)
+                            total_score += alphabetsoup_weighted_score
+                            malicious_count += 1
+                            score_breakdown.append(f"AlphabetSoup: DGA Detected (malicious) - Score Contribution: {alphabetsoup_weighted_score}")
+                        else:
+                            score_breakdown.append("AlphabetSoup: No DGA detected")
                     
-                    if dga_detected:
-                        alphabetsoup_weighted_score = calculate_vendor_score("ALPHABETSOUP", dga_detected * 1)
-                        total_score += alphabetsoup_weighted_score
-                        malicious_count += 1
-                        score_breakdown.append(f"AlphabetSoup: DGA Detected (malicious) - Score Contribution: {alphabetsoup_weighted_score}")
-                    else:
-                        score_breakdown.append("AlphabetSoup: No DGA detected")
+                    except Exception as e:
+                        print(f"DEBUG: Error in AlphabetSoup parsing: {e}")
                 else:
                     score_breakdown.append("AlphabetSoup: No relevant data found.")
             
                 # Top1M parsing (Majestic, Tranco, Cisco block detection)
                 if "TOP1MILLION" in borealis_report:
-                    top1m_report = borealis_report.get("TOP1MILLION", {})
-                    blocked_by = top1m_report.get("blocked_by", [])
+                    try:
+                        top1m_report = borealis_report.get("TOP1MILLION", [])
+                        
+                        # Initialize counters
+                        blocked_by = []
+                        
+                        # Loop through each entry in TOP1MILLION report
+                        for entry in top1m_report:
+                            list_name = entry.get("listName", "Unknown")
+                            in_list = entry.get("inList", False)
+                            
+                            # If the domain is blocked in this list, include it in scoring
+                            if in_list:
+                                blocked_by.append(list_name)
+                                
+                                # Optionally include rank or other details in the breakdown
+                                rank = entry.get("rank", "N/A")
+                                score_breakdown.append(f"  {list_name.capitalize()} list - In List: {in_list}, Rank: {rank}")
+                        
+                        # Calculate score based on the number of lists blocking this domain
+                        if blocked_by:
+                            top1m_weighted_score = calculate_vendor_score("TOP1MILLION", len(blocked_by))
+                            total_score += top1m_weighted_score
+                            malicious_count += 1
+                            score_breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)} - Score Contribution: {top1m_weighted_score}")
+                        else:
+                            score_breakdown.append("Top1M: Not blocked by Majestic, Tranco, or Cisco")
                     
-                    if blocked_by:
-                        top1m_weighted_score = calculate_vendor_score("TOP1MILLION", min(len(blocked_by) * 1))
-                        total_score += top1m_weighted_score
-                        malicious_count += 1
-                        score_breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)} - Score Contribution: {top1m_weighted_score}")
-                    else:
-                        score_breakdown.append("Top1M: Not blocked by Majestic, Tranco, or Cisco")
+                    except Exception as e:
+                        print(f"DEBUG: Error in Top1M parsing: {e}")
                 else:
                     score_breakdown.append("Top1M: No relevant data found.")
             
                 # Stonewall parsing (approval for blocking)
                 if "STONEWALL" in borealis_report:
-                    stonewall_report = borealis_report.get("STONEWALL", {})
-                    approved_for_blocking = stonewall_report.get("approved", False)
-                    
-                    if approved_for_blocking:
-                        stonewall_weighted_score = calculate_vendor_score("STONEWALL", approved_for_blocking * 1)
-                        total_score += stonewall_weighted_score
-                        malicious_count += 1
-                        score_breakdown.append(f"Stonewall: Approved for blocking (malicious) - Score Contribution: {stonewall_weighted_score}")
-                    else:
-                        score_breakdown.append("Stonewall: Not approved for blocking")
+                    try:
+                        stonewall_report = borealis_report.get("STONEWALL", {})
+                        approved_for_blocking = stonewall_report.get("approved", False)
+                        if approved_for_blocking:
+                            stonewall_weighted_score = calculate_vendor_score("STONEWALL", 1)
+                            total_score += stonewall_weighted_score
+                            malicious_count += 1
+                            score_breakdown.append(f"Stonewall: Approved for blocking (malicious) - Score Contribution: {stonewall_weighted_score}")
+                        else:
+                            score_breakdown.append("Stonewall: Not approved for blocking")
+                    except Exception as e:
+                        print(f"DEBUG: Error in Stonewall parsing: {e}")
                 else:
                     score_breakdown.append("Stonewall: No relevant data found.")
     
@@ -2219,7 +2239,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             "MetaDefender": report_metadefender_url,
                         },
                         borealis_report,
-                        ioc_type in ["url","domain"]
+                        ioc_type = "url" if ioc_type in ["url", "domain"] else ioc_type
                     )
 
                     if trusted_provider_found:
