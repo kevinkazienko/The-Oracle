@@ -2403,8 +2403,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         progress_bar.value += 1
                 
 
-                
-                    report_metadefender_hash = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                    
+                    report_metadefender_hash = analyze_with_metadefender(entry, ioc_type="hash", metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
                     if progress_bar:
                         progress_bar.value += 1
                 
