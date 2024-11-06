@@ -526,6 +526,8 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     days_threshold = 14  # The 14-day threshold for recentness
     recent_analysis_weight_boost = 1.2  # Adjust weight by 20% if analysis is recent
     last_analysis_date = None
+    # Define the threshold at the top of the script or within the scoring function
+    high_malicious_count_threshold = 3
 
 
     # # Debugging to check Borealis report status
@@ -562,12 +564,17 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     # Function to calculate vendor score with recentness check
     def calculate_vendor_score(vendor, score, last_analysis_date=None):
         weight_factor = vendor_weights.get(vendor, 0)
-        
+    
+        # Ensure current date is timezone-naive UTC
+        current_date = datetime.utcnow().replace(tzinfo=None)
         
         # Boost weight if analysis is recent
-        if last_analysis_date and (current_date - last_analysis_date <= timedelta(days=days_threshold)):
-            weight_factor *= recent_analysis_weight_boost
-        
+        if last_analysis_date:
+            # Make sure last_analysis_date is also timezone-naive for comparison
+            last_analysis_date = last_analysis_date.replace(tzinfo=None)
+            if current_date - last_analysis_date <= timedelta(days=days_threshold):
+                weight_factor *= recent_analysis_weight_boost
+    
         return score * weight_factor
 
     try:
@@ -884,18 +891,37 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                 # VirusTotal parsing
                 if 'VirusTotal' in reports:
                     vt_report = reports['VirusTotal']
-                    last_analysis_date_str = None
                     try:
+                        print("DEBUG: Processing VirusTotal report for score breakdown...")  # Debugging statement
+                
                         # Extract main data from VirusTotal
                         malicious_count, suspicious_count, last_analysis_date, crowdsourced_context, *_ = extract_vt_analysis(vt_report)
-                        if isinstance(last_analysis_date_str, str):
-                            last_analysis_date = datetime.fromisoformat(last_analysis_date_str.replace("Z", "+00:00"))
-                        else:
-                            last_analysis_date = last_analysis_date_str
+                
+                        # Convert last_analysis_date to timezone-naive UTC
+                        if isinstance(last_analysis_date, str):
+                            try:
+                                # Convert from ISO string to a UTC timezone-naive datetime
+                                last_analysis_date = datetime.fromisoformat(last_analysis_date.replace("Z", "+00:00"))
+                                last_analysis_date = last_analysis_date.astimezone(timezone.utc).replace(tzinfo=None)
+                            except ValueError:
+                                last_analysis_date = None  # Set to None if conversion fails
+                        elif isinstance(last_analysis_date, (int, float)):
+                            # Convert timestamp to naive UTC datetime
+                            last_analysis_date = datetime.utcfromtimestamp(last_analysis_date).replace(tzinfo=None)
+                        elif isinstance(last_analysis_date, datetime):
+                            # Handle existing datetime by making it naive in UTC
+                            last_analysis_date = last_analysis_date.astimezone(timezone.utc).replace(tzinfo=None)
                         
+                        # Ensure any other datetime in calculations is also naive
+                        current_time = datetime.utcnow().replace(tzinfo=None)
+                
+                        print(f"DEBUG: last_analysis_date (timezone-naive) is {last_analysis_date}")  # Debugging statement
+                
+                        # Calculate score and add to total
                         vt_score = (malicious_count * 1) + (suspicious_count * 0.5)
                         vt_weighted_score = calculate_vendor_score("VirusTotal", vt_score, last_analysis_date)
                         total_score += vt_weighted_score
+                        print(f"DEBUG: VirusTotal Score: {vt_weighted_score}, Total Score: {total_score}")  # Debugging statement
                 
                         # Extract and safely format additional fields with defaults
                         tags = ', '.join(vt_report['data']['attributes'].get('tags', [])) if vt_report['data']['attributes'].get('tags') else 'N/A'
@@ -904,14 +930,17 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                         categories_str = process_dynamic_field(vt_report.get('data', {}).get('attributes', {}).get('categories', {}))
                         popularity_str = process_dynamic_field(vt_report.get('data', {}).get('attributes', {}).get('popularity_ranks', {}))
                 
-                        # Append VirusTotal details to the breakdown
-                        score_breakdown.append(f"VirusTotal:\n  Malicious={malicious_count}\n  Suspicious={suspicious_count}")
+                        # Append VirusTotal details to the score breakdown
+                        score_breakdown.append("VirusTotal:")
+                        score_breakdown.append(f"  Malicious={malicious_count}, Suspicious={suspicious_count}")
                         score_breakdown.append(f"  Tags: {tags}")
                         score_breakdown.append(f"  Categories: {categories_str}")
                         score_breakdown.append(f"  Popularity Ranks: {popularity_str}")
                         score_breakdown.append(f"  Registrar: {registrar}")
                         score_breakdown.append(f"  Creation Date: {creation_date}")
                         score_breakdown.append(f"  Last Analysis Date: {last_analysis_date.strftime('%Y-%m-%d %H:%M:%S') if last_analysis_date else 'N/A'}")
+                
+                        print("DEBUG: VirusTotal score breakdown added.")  # Debugging statement
                 
                         # Last downloaded file info
                         last_downloaded_file_hash = vt_report['data']['attributes'].get('last_http_response_content_sha256', None)
@@ -940,7 +969,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                             except Exception as e:
                                 print(f"DEBUG: Error fetching file report for hash {last_downloaded_file_hash}: {e}")
                                 last_downloaded_file_info = f"Last downloaded file SHA256: {last_downloaded_file_hash} (Error fetching details)"
-                
+                        
                         score_breakdown.append(f"  Last Downloaded File:\n{last_downloaded_file_info}")
                 
                         # Crowdsourced context
@@ -948,6 +977,8 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                             crowdsourced_context_formatted = format_crowdsourced_context(crowdsourced_context)
                             total_score += 15  # Additional score for malicious crowdsourced context
                             score_breakdown.append(f"  Crowdsourced Context:\n  {crowdsourced_context_formatted}")
+                            print("DEBUG: Crowdsourced context added to score breakdown.")  # Debugging statement
+                
                     except Exception as e:
                         print(f"DEBUG: Error in VirusTotal parsing: {e}")
             
