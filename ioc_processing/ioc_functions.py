@@ -39,7 +39,7 @@ from api_interactions.virustotal import (
     submit_domain_for_rescan,
     submit_hash_for_rescan
 )
-from api_interactions.shodan import get_shodan_report, search_shodan_cve_country, search_shodan_product_country, search_shodan_org, search_shodan_by_port, search_shodan_product_in_country
+from api_interactions.shodan import get_shodan_report, search_shodan_cve_country, search_shodan_product_country, search_shodan_org, search_shodan_by_port, search_shodan_product_in_country, search_shodan_product_port_country
 from api_interactions.alienvault import get_alienvault_report
 from api_interactions.ipqualityscore import get_ipqualityscore_report, parse_ipqualityscore_report
 from api_interactions.greynoise import get_greynoise_report
@@ -47,10 +47,10 @@ from api_interactions.urlscan import (
     submit_url_to_urlscan,
     get_urlscan_report
 )
-from api_interactions.censys import get_censys_data, search_cves_on_censys, search_censys_org, search_censys_by_port, search_censys_product_country
+from api_interactions.censys import get_censys_data, search_cves_on_censys, search_censys_org, search_censys_by_port, search_censys_product_country, search_censys_product_port_country
 from api.api_keys import censys_api_key, censys_secret, metadefender_api_key
 from api_interactions.borealis import request_borealis, format_borealis_report
-from api_interactions.binaryedge import get_binaryedge_report, search_binaryedge_by_port, search_binaryedge_product
+from api_interactions.binaryedge import get_binaryedge_report, search_binaryedge_by_port, search_binaryedge_product, search_binaryedge_product_port_country
 from api_interactions.metadefender import analyze_with_metadefender, process_metadefender_ip_report, process_metadefender_url_report, process_metadefender_hash_report
 from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report
 from api_interactions.malshare import get_malshare_hash_report
@@ -73,19 +73,35 @@ def safe_join(separator, items):
 
 # Function to classify the IOC based on the detected pattern
 def classify_ioc(ioc):
-    ioc = ioc.strip()  # Clean up whitespace
-    if is_ip(ioc):
-        return 'ip'
+    ioc = ioc.strip()
+    
+    # Check for product with port specified (e.g., "prod:product, port")
+    if ioc.lower().startswith('prod:'):
+        product_info = ioc[5:].strip()
+        parts = product_info.split(',')
+        product = parts[0].strip() if parts else None
+        port = parts[1].strip() if len(parts) > 1 else None
+        return 'product_with_port', (product, port)
+    
+    # Handle other types
+    if ioc.lower().startswith('org:'):
+        return 'org', ioc[4:].strip()
+    elif is_ip(ioc):
+        return 'ip', ioc
     elif is_url(ioc):
-        return 'url'
+        return 'url', ioc
     elif is_domain(ioc):
-        return 'domain'
+        return 'domain', ioc
     elif is_hash(ioc):
-        return 'hash'
-    elif is_cve(ioc):  # Detect if the input is a CVE
-        return 'cve'
+        return 'hash', ioc
+    elif is_cve(ioc):
+        return 'cve', ioc
+    elif is_port(ioc):
+        return 'port', ioc
+    elif is_org(ioc):
+        return 'org', ioc
     else:
-        return 'unknown'
+        return 'unknown', ioc
 
 def auto_detect_ioc_type(iocs):
     if iocs['ips']:
@@ -98,6 +114,8 @@ def auto_detect_ioc_type(iocs):
         return 'cve'
     elif iocs['orgs']:  # Detect Organizations
         return 'org'
+    elif iocs['product_port_combinations']:
+        return 'product_port_combination'
     else:
         return 'unknown'
 
@@ -877,7 +895,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                     
                     # Apply a high score for Stonewall-approved blocking
                     if approved_for_blocking:
-                        stonewall_weighted_score = ccalculate_vendor_score("STONEWALL", approved_for_blocking * 1)
+                        stonewall_weighted_score = calculate_vendor_score("STONEWALL", approved_for_blocking * 1)
                         total_score += stonewall_weighted_score
                         malicious_count += 1  # Mark as malicious due to blocking approval
                         score_breakdown.append(f"Stonewall: Approved for blocking (malicious)\n  Stonewall Score Contribution (Weighted): {stonewall_weighted_score}")
@@ -1734,10 +1752,11 @@ def extract_borealis_info(borealis_report):
 
 
 
-def analysis(selected_category, output_file_path=None, progress_bar=None, status_output=None, selected_country=None):
+def analysis(selected_category, output_file_path=None, progress_bar=None, status_output=None, selected_country=None, port=None):
     print(f"DEBUG: analysis function started with selected_category = {selected_category}")
     print(f"DEBUG: selected_country passed to analysis = {selected_country}")
     individual_combined_reports = {}
+    product_port_combination_searched = False
     ioc_scores = []
     tags = 'N/A'
     registrar = 'N/A'
@@ -1777,6 +1796,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
         + len(selected_category['orgs']) * 2
         + len(selected_category['ports']) * 3
         + len(selected_category['products']) * 3
+        + len(selected_category['product_port_combinations']) * 3
     )
 
     # Initialize the progress bar
@@ -3100,221 +3120,223 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     individual_combined_reports[category].append(combined_report)
 
 
-                elif category == "ports":
-                    print(f"DEBUG: Found 'ports' category, proceeding with port search")
-                    report_shodan_port = None
-                    report_censys_port = None
-                    report_binaryedge_port = None
-                    
-                    # Use the selected country from the UI, and don't filter if "All" is selected
-                    selected_country = selected_country if selected_country != 'All' else None
-
-                    
-                    # Perform port search on Shodan, passing the selected country if applicable
-                    report_shodan_port = search_shodan_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-            
-                
-                    # Perform port search on Censys, passing the selected country if applicable
-                    report_censys_port = search_censys_by_port(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                    #print(f"DEBUG: search_censys_by_port returned: {report_censys_port}")
-                    if progress_bar:
-                        progress_bar.value += 1
-
-                    print(f"DEBUG: Calling BinaryEdge for port {entry} in {selected_country}")
-                    report_binaryedge_port = search_binaryedge_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                    
-                
-                    total_score = 0
-                    breakdown_str = ""
-                    verdict = "Not Malicious"  # Default verdict in case there's no valid result
-                
-                    # Calculate verdict and score breakdown
-                    total_score, score_breakdown, verdict = calculate_total_malicious_score(
-                        {
-                            "Shodan": report_shodan_port,
-                            "Censys": report_censys_port,
-                            "BinaryEdge": report_binaryedge_port,
-                            
-                        },
-                        None,  # Borealis is not used for ports, so pass None
-                        ioc_type="port"
-                    )
-                    #combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
-
-                    # Shodan Report
-                    if report_shodan_port and isinstance(report_shodan_port.get('matches', []), list):
-                        total_results = report_shodan_port.get('total', 'N/A')
-                        top_cities = '\n    - '.join([city.get('value', 'N/A') for city in report_shodan_port.get('facets', {}).get('city', [])])
-                        top_orgs = '\n    - '.join([org.get('value', 'N/A') for org in report_shodan_port.get('facets', {}).get('org', [])])
-                        top_products = '\n    - '.join([product.get('value', 'N/A') for product in report_shodan_port.get('facets', {}).get('product', [])])
-                        if not top_products.strip():
-                            top_products = "No product data available"
+                elif category == "ports" and not product_port_combination_searched:
+                    for port_entry in entries:
+                        print(f"DEBUG: Performing standalone port search for port '{port_entry}'")
+                        print(f"DEBUG: Found 'ports' category, proceeding with port search")
+                        report_shodan_port = None
+                        report_censys_port = None
+                        report_binaryedge_port = None
                         
-                        combined_report += f"Shodan Report for Port {entry} in {selected_country if selected_country else 'any country'}:\n"
-                        combined_report += f"  - Total Results: {total_results}\n"
-                        combined_report += f"  - Top Cities:\n    - {top_cities}\n"
-                        combined_report += f"  - Top Organizations:\n    - {top_orgs}\n"
-                        combined_report += f"  - Top Products:\n    - {top_products}\n\n"
+                        # Use the selected country from the UI, and don't filter if "All" is selected
+                        selected_country = selected_country if selected_country != 'All' else None
+    
+                        
+                        # Perform port search on Shodan, passing the selected country if applicable
+                        report_shodan_port = search_shodan_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                    
                 
-                        for port_entry in report_shodan_port['matches']:
-                            combined_report += f"  - IP: {sanitize_and_defang(port_entry.get('ip_str', 'N/A'))}\n"
-                            combined_report += f"    - Organization: {port_entry.get('org', 'N/A')}\n"
-                            combined_report += f"    - ASN: {port_entry.get('asn', 'N/A')}\n"
-                            combined_report += f"    - ISP: {port_entry.get('isp', 'N/A')}\n"
-                            combined_report += f"    - Product: {port_entry.get('product', 'N/A')}\n"
-                            combined_report += f"    - OS: {port_entry.get('os', 'N/A')}\n"
-                
-                            # Location details
-                            location = port_entry.get('location', {})
-                            combined_report += f"    - City: {location.get('city', 'N/A')}\n"
-                            combined_report += f"    - Region Code: {location.get('region_code', 'N/A')}\n"
-                            combined_report += f"    - Country: {location.get('country_name', 'N/A')}\n"
-                            combined_report += f"    - Latitude: {location.get('latitude', 'N/A')}\n"
-                            combined_report += f"    - Longitude: {location.get('longitude', 'N/A')}\n"
-                
-                            # Vulnerabilities (if any)
-                            vulns = port_entry.get('vulns', {})
-                            if vulns:
-                                combined_report += "    - Vulnerabilities:\n"
-                                for vuln, details in vulns.items():
-                                    combined_report += f"      - {vuln}: {details.get('summary', 'N/A')}\n"
-                
-                            combined_report += "\n"
-                    else:
-                        combined_report += f"Shodan Report for Port {entry}:\nNo results found or invalid report format.\n\n"
-                
-                
-                    if report_censys_port and isinstance(report_censys_port, list):
-                        combined_report += f"Censys Report for Port {entry} in {selected_country if selected_country else 'any country'}:\n"
                     
-                        for port_entry in report_censys_port:
-                            combined_report += f"  - IP: {sanitize_and_defang(port_entry.get('IP', 'N/A'))}\n"
-                            combined_report += f"    - Last Updated: {port_entry.get('Last Updated', 'N/A')}\n"
-                            combined_report += f"    - ASN: {port_entry.get('ASN', 'N/A')}\n"
-                            combined_report += f"    - Autonomous System: {port_entry.get('Autonomous System', 'N/A')}\n"
-                            combined_report += f"    - BGP Prefix: {port_entry.get('BGP Prefix', 'N/A')}\n"
-                            combined_report += f"    - ASN Country Code: {port_entry.get('ASN Country Code', 'N/A')}\n"
-                            combined_report += f"    - ASN Name: {port_entry.get('ASN Name', 'N/A')}\n"
+                        # Perform port search on Censys, passing the selected country if applicable
+                        report_censys_port = search_censys_by_port(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                        #print(f"DEBUG: search_censys_by_port returned: {report_censys_port}")
+                        if progress_bar:
+                            progress_bar.value += 1
+    
+                        print(f"DEBUG: Calling BinaryEdge for port {entry} in {selected_country}")
+                        report_binaryedge_port = search_binaryedge_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                     
-                            # Location details
-                            combined_report += f"    - City: {port_entry.get('City', 'N/A')}\n"
-                            combined_report += f"    - Province: {port_entry.get('Province', 'N/A')}\n"
-                            combined_report += f"    - Country: {port_entry.get('Country', 'N/A')}\n"
-                            combined_report += f"    - Continent: {port_entry.get('Continent', 'N/A')}\n"
-                            combined_report += f"    - Postal Code: {port_entry.get('Postal Code', 'N/A')}\n"
-                            combined_report += f"    - Latitude: {port_entry.get('Latitude', 'N/A')}\n"
-                            combined_report += f"    - Longitude: {port_entry.get('Longitude', 'N/A')}\n"
-                            combined_report += f"    - Timezone: {port_entry.get('Timezone', 'N/A')}\n"
-                            combined_report += f"    - Country Code: {port_entry.get('Country Code', 'N/A')}\n"
+                        
                     
-                            # Operating system details
-                            combined_report += f"    - Operating System Product: {port_entry.get('Operating System Product', 'N/A')}\n"
-                            combined_report += f"    - Operating System Vendor: {port_entry.get('Operating System Vendor', 'N/A')}\n"
-                            combined_report += f"    - Operating System CPE: {port_entry.get('Operating System CPE', 'N/A')}\n"
-                            combined_report += f"    - Operating System Source: {port_entry.get('Operating System Source', 'N/A')}\n"
-                            combined_report += f"    - Operating System Family: {port_entry.get('Operating System Family', 'N/A')}\n"
-                            combined_report += f"    - Operating System Device: {port_entry.get('Operating System Device', 'N/A')}\n"
+                        total_score = 0
+                        breakdown_str = ""
+                        verdict = "Not Malicious"  # Default verdict in case there's no valid result
                     
-                            # DNS reverse names
-                            dns = port_entry.get('DNS Reverse Names', [])
-                            if dns:
-                                combined_report += f"    - Reverse DNS: {', '.join(dns)}\n"
-                    
-                            # Services (if any)
-                            services = port_entry.get('Services', [])
-                            if services:
-                                combined_report += "    - Services:\n"
-                                for service in services:
-                                    combined_report += f"      - Service Name: {service.get('Service Name', 'N/A')}\n"
-                                    combined_report += f"        - Transport Protocol: {service.get('Transport Protocol', 'N/A')}\n"
-                                    combined_report += f"        - Extended Service Name: {service.get('Extended Service Name', 'N/A')}\n"
-                                    combined_report += f"        - Port: {service.get('Port', 'N/A')}\n"
-                                    combined_report += f"        - Certificate: {service.get('Certificate', 'N/A')}\n"
-                    
-                            # Matched services for the specific port
-                            matched_services = port_entry.get('Matched Services', [])
-                            if matched_services:
-                                combined_report += "    - Matched Services:\n"
-                                for matched_service in matched_services:
-                                    combined_report += f"      - Matched Service Name: {matched_service.get('Matched Service Name', 'N/A')}\n"
-                                    combined_report += f"        - Transport Protocol: {matched_service.get('Transport Protocol', 'N/A')}\n"
-                                    combined_report += f"        - Port: {matched_service.get('Port', 'N/A')}\n"
-                    
-                            combined_report += "\n"
-                    
-                    else:
-                        combined_report += f"Censys Report for Port {entry}:\nNo results found or invalid report format.\n\n"
-
-
-                    
-                    if report_binaryedge_port:
-                        combined_report += f"BinaryEdge Report for Port {entry}:\n"
-                        if 'events' in report_binaryedge_port:
-                            for event in report_binaryedge_port['events']:
-                                # Extract target information
-                                ip = event.get('Target IP', 'N/A')
-                                port = event.get('Target Port', 'N/A')
-                                protocol = event.get('Target Protocol', 'N/A')
+                        # Calculate verdict and score breakdown
+                        total_score, score_breakdown, verdict = calculate_total_malicious_score(
+                            {
+                                "Shodan": report_shodan_port,
+                                "Censys": report_censys_port,
+                                # "BinaryEdge": report_binaryedge_port,
                                 
-                                # Extract origin information
-                                origin_ip = event.get('Origin IP', 'N/A')
-                                origin_country = event.get('Origin Country', 'N/A')
-                                origin_region = event.get('Origin Region', 'N/A')
-                                
-                                # Use format_date to convert the timestamp
-                                origin_timestamp = format_date(event.get('Origin Timestamp', 'N/A'))
+                            },
+                            None,  # Borealis is not used for ports, so pass None
+                            ioc_type="port"
+                        )
+                        #combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+    
+                        # Shodan Report
+                        if report_shodan_port and isinstance(report_shodan_port.get('matches', []), list):
+                            total_results = report_shodan_port.get('total', 'N/A')
+                            top_cities = '\n    - '.join([city.get('value', 'N/A') for city in report_shodan_port.get('facets', {}).get('city', [])])
+                            top_orgs = '\n    - '.join([org.get('value', 'N/A') for org in report_shodan_port.get('facets', {}).get('org', [])])
+                            top_products = '\n    - '.join([product.get('value', 'N/A') for product in report_shodan_port.get('facets', {}).get('product', [])])
+                            if not top_products.strip():
+                                top_products = "No product data available"
+                            
+                            combined_report += f"Shodan Report for Port {entry} in {selected_country if selected_country else 'any country'}:\n"
+                            combined_report += f"  - Total Results: {total_results}\n"
+                            combined_report += f"  - Top Cities:\n    - {top_cities}\n"
+                            combined_report += f"  - Top Organizations:\n    - {top_orgs}\n"
+                            combined_report += f"  - Top Products:\n    - {top_products}\n\n"
                     
-                                # Add extracted data to the report
-                                combined_report += f"  - Target IP: {sanitize_and_defang(ip)}\n"
-                                combined_report += f"    - Target Port: {port}\n"
-                                combined_report += f"    - Target Protocol: {protocol}\n"
-                                combined_report += f"    - Origin Country: {origin_country}\n"
-                                combined_report += f"    - Origin IP: {sanitize_and_defang(origin_ip)}\n"
-                                combined_report += f"    - Origin Region: {origin_region}\n"
-                                combined_report += f"    - Origin Timestamp: {origin_timestamp}\n"
+                            for port_entry in report_shodan_port['matches']:
+                                combined_report += f"  - IP: {sanitize_and_defang(port_entry.get('ip_str', 'N/A'))}\n"
+                                combined_report += f"    - Organization: {port_entry.get('org', 'N/A')}\n"
+                                combined_report += f"    - ASN: {port_entry.get('asn', 'N/A')}\n"
+                                combined_report += f"    - ISP: {port_entry.get('isp', 'N/A')}\n"
+                                combined_report += f"    - Product: {port_entry.get('product', 'N/A')}\n"
+                                combined_report += f"    - OS: {port_entry.get('os', 'N/A')}\n"
                     
-                                # Extract result information if available
-                                result_info = event.get('result', {}).get('data', {}).get('response', {})
-                                if result_info:
-                                    response_url = result_info.get('url', 'N/A')
-                                    status_info = result_info.get('status', {})
-                                    status_code = status_info.get('code', 'N/A')
-                                    status_message = status_info.get('message', 'N/A')
+                                # Location details
+                                location = port_entry.get('location', {})
+                                combined_report += f"    - City: {location.get('city', 'N/A')}\n"
+                                combined_report += f"    - Region Code: {location.get('region_code', 'N/A')}\n"
+                                combined_report += f"    - Country: {location.get('country_name', 'N/A')}\n"
+                                combined_report += f"    - Latitude: {location.get('latitude', 'N/A')}\n"
+                                combined_report += f"    - Longitude: {location.get('longitude', 'N/A')}\n"
                     
-                                    combined_report += f"    - Response URL: {response_url}\n"
-                                    combined_report += f"    - Response Status Code: {status_code}\n"
-                                    combined_report += f"    - Response Message: {status_message}\n"
+                                # Vulnerabilities (if any)
+                                vulns = port_entry.get('vulns', {})
+                                if vulns:
+                                    combined_report += "    - Vulnerabilities:\n"
+                                    for vuln, details in vulns.items():
+                                        combined_report += f"      - {vuln}: {details.get('summary', 'N/A')}\n"
                     
-                                    # Extract headers
-                                    headers = result_info.get('headers', {}).get('headers', {})
-                                    combined_report += f"    - Response Headers:\n"
-                                    for header_key, header_value in headers.items():
-                                        combined_report += f"        - {header_key}: {header_value}\n"
-                                    
-                                    # Trim long response body for readability
-                                    body = result_info.get('body', {}).get('content', 'N/A')
-                                    combined_report += f"    - Response Body: {body[:100]}...\n"
-                                
                                 combined_report += "\n"
                         else:
-                            combined_report += "No results found or invalid report format.\n"
-                    else:
-                        combined_report += "Error querying BinaryEdge.\n\n"
-                
-                    # Append score breakdown
-                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
-                
-                    # Append to scores list for sorting
-                    ioc_scores.append((entry, total_score, combined_report, verdict))
-                
-                    # Append the final CVE report
-                    individual_combined_reports[category].append(combined_report)
+                            combined_report += f"Shodan Report for Port {entry}:\nNo results found or invalid report format.\n\n"
+                    
+                    
+                        if report_censys_port and isinstance(report_censys_port, list):
+                            combined_report += f"Censys Report for Port {entry} in {selected_country if selected_country else 'any country'}:\n"
+                        
+                            for port_entry in report_censys_port:
+                                combined_report += f"  - IP: {sanitize_and_defang(port_entry.get('IP', 'N/A'))}\n"
+                                combined_report += f"    - Last Updated: {port_entry.get('Last Updated', 'N/A')}\n"
+                                combined_report += f"    - ASN: {port_entry.get('ASN', 'N/A')}\n"
+                                combined_report += f"    - Autonomous System: {port_entry.get('Autonomous System', 'N/A')}\n"
+                                combined_report += f"    - BGP Prefix: {port_entry.get('BGP Prefix', 'N/A')}\n"
+                                combined_report += f"    - ASN Country Code: {port_entry.get('ASN Country Code', 'N/A')}\n"
+                                combined_report += f"    - ASN Name: {port_entry.get('ASN Name', 'N/A')}\n"
+                        
+                                # Location details
+                                combined_report += f"    - City: {port_entry.get('City', 'N/A')}\n"
+                                combined_report += f"    - Province: {port_entry.get('Province', 'N/A')}\n"
+                                combined_report += f"    - Country: {port_entry.get('Country', 'N/A')}\n"
+                                combined_report += f"    - Continent: {port_entry.get('Continent', 'N/A')}\n"
+                                combined_report += f"    - Postal Code: {port_entry.get('Postal Code', 'N/A')}\n"
+                                combined_report += f"    - Latitude: {port_entry.get('Latitude', 'N/A')}\n"
+                                combined_report += f"    - Longitude: {port_entry.get('Longitude', 'N/A')}\n"
+                                combined_report += f"    - Timezone: {port_entry.get('Timezone', 'N/A')}\n"
+                                combined_report += f"    - Country Code: {port_entry.get('Country Code', 'N/A')}\n"
+                        
+                                # Operating system details
+                                combined_report += f"    - Operating System Product: {port_entry.get('Operating System Product', 'N/A')}\n"
+                                combined_report += f"    - Operating System Vendor: {port_entry.get('Operating System Vendor', 'N/A')}\n"
+                                combined_report += f"    - Operating System CPE: {port_entry.get('Operating System CPE', 'N/A')}\n"
+                                combined_report += f"    - Operating System Source: {port_entry.get('Operating System Source', 'N/A')}\n"
+                                combined_report += f"    - Operating System Family: {port_entry.get('Operating System Family', 'N/A')}\n"
+                                combined_report += f"    - Operating System Device: {port_entry.get('Operating System Device', 'N/A')}\n"
+                        
+                                # DNS reverse names
+                                dns = port_entry.get('DNS Reverse Names', [])
+                                if dns:
+                                    combined_report += f"    - Reverse DNS: {', '.join(dns)}\n"
+                        
+                                # Services (if any)
+                                services = port_entry.get('Services', [])
+                                if services:
+                                    combined_report += "    - Services:\n"
+                                    for service in services:
+                                        combined_report += f"      - Service Name: {service.get('Service Name', 'N/A')}\n"
+                                        combined_report += f"        - Transport Protocol: {service.get('Transport Protocol', 'N/A')}\n"
+                                        combined_report += f"        - Extended Service Name: {service.get('Extended Service Name', 'N/A')}\n"
+                                        combined_report += f"        - Port: {service.get('Port', 'N/A')}\n"
+                                        combined_report += f"        - Certificate: {service.get('Certificate', 'N/A')}\n"
+                        
+                                # Matched services for the specific port
+                                matched_services = port_entry.get('Matched Services', [])
+                                if matched_services:
+                                    combined_report += "    - Matched Services:\n"
+                                    for matched_service in matched_services:
+                                        combined_report += f"      - Matched Service Name: {matched_service.get('Matched Service Name', 'N/A')}\n"
+                                        combined_report += f"        - Transport Protocol: {matched_service.get('Transport Protocol', 'N/A')}\n"
+                                        combined_report += f"        - Port: {matched_service.get('Port', 'N/A')}\n"
+                        
+                                combined_report += "\n"
+                        
+                        else:
+                            combined_report += f"Censys Report for Port {entry}:\nNo results found or invalid report format.\n\n"
+    
+    
+                        
+                        if report_binaryedge_port:
+                            combined_report += f"BinaryEdge Report for Port {entry}:\n"
+                            if 'events' in report_binaryedge_port:
+                                for event in report_binaryedge_port['events']:
+                                    # Extract target information
+                                    ip = event.get('Target IP', 'N/A')
+                                    port = event.get('Target Port', 'N/A')
+                                    protocol = event.get('Target Protocol', 'N/A')
+                                    
+                                    # Extract origin information
+                                    origin_ip = event.get('Origin IP', 'N/A')
+                                    origin_country = event.get('Origin Country', 'N/A')
+                                    origin_region = event.get('Origin Region', 'N/A')
+                                    
+                                    # Use format_date to convert the timestamp
+                                    origin_timestamp = format_date(event.get('Origin Timestamp', 'N/A'))
+                        
+                                    # Add extracted data to the report
+                                    combined_report += f"  - Target IP: {sanitize_and_defang(ip)}\n"
+                                    combined_report += f"    - Target Port: {port}\n"
+                                    combined_report += f"    - Target Protocol: {protocol}\n"
+                                    combined_report += f"    - Origin Country: {origin_country}\n"
+                                    combined_report += f"    - Origin IP: {sanitize_and_defang(origin_ip)}\n"
+                                    combined_report += f"    - Origin Region: {origin_region}\n"
+                                    combined_report += f"    - Origin Timestamp: {origin_timestamp}\n"
+                        
+                                    # Extract result information if available
+                                    result_info = event.get('result', {}).get('data', {}).get('response', {})
+                                    if result_info:
+                                        response_url = result_info.get('url', 'N/A')
+                                        status_info = result_info.get('status', {})
+                                        status_code = status_info.get('code', 'N/A')
+                                        status_message = status_info.get('message', 'N/A')
+                        
+                                        combined_report += f"    - Response URL: {response_url}\n"
+                                        combined_report += f"    - Response Status Code: {status_code}\n"
+                                        combined_report += f"    - Response Message: {status_message}\n"
+                        
+                                        # Extract headers
+                                        headers = result_info.get('headers', {}).get('headers', {})
+                                        combined_report += f"    - Response Headers:\n"
+                                        for header_key, header_value in headers.items():
+                                            combined_report += f"        - {header_key}: {header_value}\n"
+                                        
+                                        # Trim long response body for readability
+                                        body = result_info.get('body', {}).get('content', 'N/A')
+                                        combined_report += f"    - Response Body: {body[:100]}...\n"
+                                    
+                                    combined_report += "\n"
+                            else:
+                                combined_report += "No results found or invalid report format.\n"
+                        else:
+                            combined_report += "Error querying BinaryEdge.\n\n"
+                    
+                        # Append score breakdown
+                        combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+                    
+                        # Append to scores list for sorting
+                        ioc_scores.append((entry, total_score, combined_report, verdict))
+                    
+                        # Append the final CVE report
+                        individual_combined_reports[category].append(combined_report)
 
 
                 elif category == "products":
@@ -3525,12 +3547,158 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     
                     # Append the score breakdown
                     combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
-                    
+                        
                     # Append to scores list for sorting
                     ioc_scores.append((entry, total_score, combined_report, verdict))
                 
                     # Append the final CVE report
                     individual_combined_reports[category].append(combined_report)
+
+                elif category == "product_port_combinations":
+                    for entry in entries:
+                        product = entry[0]
+                        port = entry[1]
+                        selected_country = selected_country if selected_country != 'All' else None
+                        
+                        # Initialize variables for the reports
+                        report_shodan_product_port = None
+                        report_censys_product_port = None
+                        report_binaryedge_product_port = None
+                
+                        print(f"DEBUG: Processing product-port combination search for '{product}' with port '{port}' in country '{selected_country}'")
+                
+                        # Perform product-port-country search on Shodan
+                        report_shodan_product_port = search_shodan_product_port_country(
+                            product, port=port, country=selected_country,
+                            status_output=status_output, progress_bar=progress_bar
+                        )
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                        # Perform product-port-country search on Censys
+                        report_censys_product_port = search_censys_product_port_country(
+                            censys_api_key, censys_secret, product, port=port,
+                            country=selected_country, status_output=status_output, progress_bar=progress_bar
+                        )
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                        # Perform product-port search on BinaryEdge (if applicable)
+                        report_binaryedge_product_port = search_binaryedge_product_port_country(
+                            product, port=port, country=selected_country,
+                            status_output=status_output, progress_bar=progress_bar
+                        )
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                        # Calculate verdict and score breakdown
+                        total_score, score_breakdown, verdict = calculate_total_malicious_score(
+                            {
+                                "Shodan": report_shodan_product_port,
+                                "Censys": report_censys_product_port,
+                                "BinaryEdge": report_binaryedge_product_port,
+                            },
+                            None,  # Borealis is not used for ports, so pass None
+                            ioc_type="product_port"
+                        ) or (0, "No data", "Not Malicious")  # Provide defaults if None is returned
+
+                        # Start building the combined report
+                        combined_report += f"Product-Port Combination Report for '{product}' on Port {port} in {selected_country or 'any country'}:\n\n"
+                
+                        # Process Shodan report
+                        if report_shodan_product_port:
+                            combined_report += f"Shodan Report for Product '{product}' on Port {port} in {selected_country if selected_country else 'any country'}:\n"
+                            combined_report += f"  - Total Results: {report_shodan_product_port.get('total', 'N/A')}\n"
+                
+                            # Only include top organizations for facet data
+                            facets = report_shodan_product_port.get('facets', {})
+                            top_orgs = '\n    - '.join([f"{org.get('value', 'N/A')} (Count: {org.get('count', 'N/A')})" for org in facets.get('org', [])])
+                            
+                            combined_report += f"  - Top Organizations:\n    - {top_orgs or 'N/A'}\n\n"
+                
+                            # Include individual match details
+                            for match in report_shodan_product_port.get('matches', []):
+                                combined_report += (
+                                    f"  - IP: {sanitize_and_defang(match.get('ip_str', 'N/A'))}\n"
+                                    f"    - Port: {match.get('port', 'N/A')}\n"
+                                    f"    - Organization: {match.get('org', 'N/A')}\n"
+                                    f"    - ASN: {match.get('asn', 'N/A')}\n"
+                                    f"    - ISP: {match.get('isp', 'N/A')}\n"
+                                    f"    - Product: {match.get('product', 'N/A')}\n"
+                                    f"    - Country: {match.get('location', {}).get('country_name', 'N/A')}\n\n"
+                                )
+                
+                        # Process Censys report if available
+                        if report_censys_product_port:
+                            # Check for the 'result' key and then for 'hits' within it
+                            result = report_censys_product_port.get('result', {})
+                            hits = result.get('hits', [])
+                            
+                            if hits:
+                                combined_report += f"Censys Report for Product '{product}' on Port {port} in {selected_country if selected_country else 'any country'}:\n"
+                                
+                                for product_entry in hits:
+                                    # Extracting details from each hit entry
+                                    ip_address = product_entry.get('ip', 'N/A')
+                                    last_updated = product_entry.get('last_updated_at', 'N/A')
+                                    location = product_entry.get('location', {})
+                                    as_info = product_entry.get('autonomous_system', {})
+                        
+                                    combined_report += (
+                                        f"  - IP: {sanitize_and_defang(ip_address)}\n"
+                                        f"    - Last Updated: {last_updated}\n"
+                                        f"    - ASN: {as_info.get('asn', 'N/A')}\n"
+                                        f"    - Autonomous System: {as_info.get('description', 'N/A')}\n"
+                                        f"    - Country: {location.get('country', 'N/A')}\n"
+                                        f"    - Province: {location.get('province', 'N/A')}\n"
+                                        f"    - City: {location.get('city', 'N/A')}\n"
+                                        f"    - Latitude: {location.get('coordinates', {}).get('latitude', 'N/A')}\n"
+                                        f"    - Longitude: {location.get('coordinates', {}).get('longitude', 'N/A')}\n"
+                                    )
+                        
+                                    # Parsing operating system details if present
+                                    os_info = product_entry.get('operating_system', {})
+                                    combined_report += (
+                                        f"    - Operating System: {os_info.get('product', 'N/A')}\n"
+                                        f"    - OS Version: {os_info.get('version', 'N/A')}\n"
+                                        f"    - OS Vendor: {os_info.get('vendor', 'N/A')}\n"
+                                        f"    - OS CPE: {os_info.get('cpe', 'N/A')}\n"
+                                    )
+                        
+                                    # Parsing services details
+                                    services = product_entry.get('services', [])
+                                    combined_report += "    - Services:\n"
+                                    for service in services:
+                                        combined_report += (
+                                            f"      - Service Name: {service.get('service_name', 'N/A')}\n"
+                                            f"        - Port: {service.get('port', 'N/A')}\n"
+                                            f"        - Protocol: {service.get('transport_protocol', 'N/A')}\n"
+                                            f"        - Extended Service Name: {service.get('extended_service_name', 'N/A')}\n"
+                                        )
+                                    combined_report += "\n"
+                            else:
+                                # Detailed message when `hits` is empty or None
+                                combined_report += f"No Censys 'hits' data found for product '{product}' on port {port} in {selected_country or 'any country'}.\n"
+                        else:
+                            # More detailed message for missing or incomplete report structure
+                            combined_report += f"Unexpected response structure: No 'result' field found in Censys data for product '{product}' on port {port}.\n"
+                
+                        # Process BinaryEdge report if available
+                        if report_binaryedge_product_port:
+                            combined_report += f"BinaryEdge Report for Product '{product}' on Port {port}:\n"
+                            for event in report_binaryedge_product_port.get('events', []):
+                                combined_report += (
+                                    f"  - Target IP: {sanitize_and_defang(event.get('target', {}).get('ip', 'N/A'))}\n"
+                                    f"    - Target Port: {event.get('target', {}).get('port', 'N/A')}\n"
+                                    f"    - Origin Country: {event.get('origin', {}).get('country', 'N/A')}\n"
+                                )
+                        
+                        # Score breakdown
+                        combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+                        product_port_combination_searched = True
+                        
+                        ioc_scores.append((product, total_score, combined_report, verdict))
+                        individual_combined_reports["product_port_combinations"].append(combined_report)
 
             print(f"Completed Processing {category.upper()}\n")
 

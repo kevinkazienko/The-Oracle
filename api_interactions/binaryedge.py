@@ -251,3 +251,32 @@ def search_binaryedge_product(product_name, status_output=None, progress_bar=Non
     except Exception as e:
         print(f"An error occurred: {e}")
         return {"summary": "Error during query execution.", "events": []}
+
+
+def search_binaryedge_product_port_country(product, port=None, country=None, status_output=None, progress_bar=None):
+    headers = {'X-Key': BINARYEDGE_API_KEY}
+    
+    # Construct query based on product, port, and optional country
+    query = f"product:{product}"
+    if port:
+        query += f" port:{port}"
+    if country:
+        query += f" country:{country}"
+
+    # URL encode the query
+    url = f"https://api.binaryedge.io/v2/query/search?query={urllib.parse.quote(query)}"
+    print(f"DEBUG: BinaryEdge Query URL: {url}")
+
+    if status_output:
+        with status_output:
+            clear_output(wait=True)
+            display(HTML(f"<b>BinaryEdge querying product {product}, port {port}, country {country}...</b>"))
+            display(progress_bar)
+
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error querying BinaryEdge: {response.status_code}")
+        return {"error": response.text}

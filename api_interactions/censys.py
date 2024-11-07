@@ -10,7 +10,9 @@ from file_operations.file_utils import (
 )
 import requests
 import json
+import base64
 import urllib.parse
+from urllib.parse import quote
 from IPython.display import clear_output, HTML, display
 
 def get_censys_data(censys_api_key, censys_secret, query, status_output=None, progress_bar=None):
@@ -561,6 +563,47 @@ def search_censys_product_country(censys_api_key, censys_secret, product, countr
         product_summary = {"error": str(e)}
 
     return product_summary
+
+
+def search_censys_product_port_country(censys_api_key, censys_secret, product, port=None, country=None, status_output=None, progress_bar=None):
+    try:
+        # Construct the query with product, port, and country
+        query = f"services.service_name:{product} and services.port:{port} and location.country:`{country}`"
+        
+        # Encode the query
+        encoded_query = quote(query)
+        url = f"https://search.censys.io/api/v2/hosts/search?q={encoded_query}"
+        print(f"DEBUG: Encoded Censys API Query URL: {url}")
+
+        # Display status output if needed
+        if status_output:
+            with status_output:
+                clear_output(wait=True)
+                display(HTML(f'<b>Querying Censys for product: {product}, port: {port}, country: {country}</b>'))
+                display(progress_bar)
+
+        # Make the request to the Censys API
+        response = requests.get(url, headers={
+            "Authorization": f"Basic {base64.b64encode(f'{censys_api_key}:{censys_secret}'.encode()).decode()}"
+        })
+        
+        # Check response status
+        if response.status_code == 200:
+            # Print the raw JSON response before returning it
+            report_censys_product_port = response.json()
+            # print("DEBUG: Raw Censys JSON response for product-port combination search:")
+            # print(report_censys_product_port)
+            return report_censys_product_port
+        else:
+            print(f"Error querying Censys: {response.status_code}")
+            return {"error": response.text}
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error searching Censys for Product: {e}")
+        return {"results": "Error occurred."}
+    except json.JSONDecodeError as e:
+        print(f"Error decoding Censys JSON response: {e}")
+        return {"results": "Error occurred."}
 
 
 
