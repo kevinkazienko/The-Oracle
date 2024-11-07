@@ -1783,6 +1783,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
     selected_category.setdefault('orgs', [])
     selected_category.setdefault('ports', [])
     selected_category.setdefault('products', [])
+    selected_category.setdefault('product_port_combinations', [])
 
     print(f"DEBUG: Updated selected_category = {selected_category}")
 
