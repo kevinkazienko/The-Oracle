@@ -145,7 +145,10 @@ Added UI support for light/dark mode
 Revamped UI, auto IOC type detection for searches.
 
 **V2.9.7**
-Added Port, Product, Organization and CVE search capabilities for Shodan and Censys.
+Added port, product, organization and CVE search capabilities for Shodan and Censys.
 
 **V2.9.9**
 Added BinaryEdge to Port and Product searches.
+
+**V3.0.8**
+Added support for product and port combination searches using Shodan, Censys and BinaryEdge.
