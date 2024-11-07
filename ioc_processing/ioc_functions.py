@@ -764,18 +764,18 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                             f"  IPQS Score Contribution (Weighted): {ipqs_weighted_score}"
                         )
                         
-                        # Trusted Provider Detection
-                        asn = str(ipqs_report.get("asn", ""))
-                        isp = ipqs_report.get("isp", "")
-                        organization = ipqs_report.get("organization", "")
+                        # # Trusted Provider Detection
+                        # asn = str(ipqs_report.get("asn", ""))
+                        # isp = ipqs_report.get("isp", "")
+                        # organization = ipqs_report.get("organization", "")
                         
-                        # Check for trusted provider
-                        provider = check_trusted_provider(asn, organization, isp)
-                        if provider:
-                            trusted_provider_found = provider
-                            score_breakdown.append(f"  IP belongs to trusted provider ({trusted_provider_found})...Proceed with caution")
-                        else:
-                            score_breakdown.append("  No Trusted Provider Detected in IPQualityScore")
+                        # # Check for trusted provider
+                        # provider = check_trusted_provider(asn, organization, isp)
+                        # if provider:
+                        #     trusted_provider_found = provider
+                        #     score_breakdown.append(f"  IP belongs to trusted provider ({trusted_provider_found})...Proceed with caution")
+                        # else:
+                        #     score_breakdown.append("  No Trusted Provider Detected in IPQualityScore")
                     else:
                         score_breakdown.append("IPQualityScore: No data available")
     
@@ -888,21 +888,21 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                 if borealis_breakdown:
                     score_breakdown.append(f"Borealis Report:\n{borealis_breakdown}")
     
-                # Stonewall parsing (approval for blocking)
-                if 'STONEWALL' in borealis_report:
-                    stonewall_report = borealis_report.get("STONEWALL", {})
-                    approved_for_blocking = stonewall_report.get("approved", False)
+                # # Stonewall parsing (approval for blocking)
+                # if 'STONEWALL' in borealis_report:
+                #     stonewall_report = borealis_report.get("STONEWALL", {})
+                #     approved_for_blocking = stonewall_report.get("approved", False)
                     
-                    # Apply a high score for Stonewall-approved blocking
-                    if approved_for_blocking:
-                        stonewall_weighted_score = calculate_vendor_score("STONEWALL", approved_for_blocking * 1)
-                        total_score += stonewall_weighted_score
-                        malicious_count += 1  # Mark as malicious due to blocking approval
-                        score_breakdown.append(f"Stonewall: Approved for blocking (malicious)\n  Stonewall Score Contribution (Weighted): {stonewall_weighted_score}")
-                    else:
-                        score_breakdown.append("Stonewall: Not approved for blocking")
-                else:
-                    score_breakdown.append("Stonewall: No relevant data found.")
+                #     # Apply a high score for Stonewall-approved blocking
+                #     if approved_for_blocking:
+                #         stonewall_weighted_score = calculate_vendor_score("STONEWALL", approved_for_blocking * 1)
+                #         total_score += stonewall_weighted_score
+                #         malicious_count += 1  # Mark as malicious due to blocking approval
+                #         score_breakdown.append(f"Stonewall: Approved for blocking (malicious)\n  Stonewall Score Contribution (Weighted): {stonewall_weighted_score}")
+                #     else:
+                #         score_breakdown.append("Stonewall: Not approved for blocking")
+                # else:
+                #     score_breakdown.append("Stonewall: No relevant data found.")
     
             # URL and Domain-based IOC
             elif ioc_type in ["url", "domain"]:
@@ -983,12 +983,13 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                                         f"  on {file_analysis_date} UTC"
                                     )
                                 else:
-                                    last_downloaded_file_info = f"Last downloaded file SHA256: {last_downloaded_file_hash} (No details found)"
+                                    last_downloaded_file_info = f"  Last downloaded file SHA256: {last_downloaded_file_hash} (No details found)"
                             except Exception as e:
                                 print(f"DEBUG: Error fetching file report for hash {last_downloaded_file_hash}: {e}")
-                                last_downloaded_file_info = f"Last downloaded file SHA256: {last_downloaded_file_hash} (Error fetching details)"
+                                last_downloaded_file_info = f"  Last downloaded file SHA256: {last_downloaded_file_hash} (Error fetching details)"
                         
                         score_breakdown.append(f"  Last Downloaded File:\n{last_downloaded_file_info}")
+                        score_breakdown.append(f"  Score Contribution: {vt_weighted_score}")
                 
                         # Crowdsourced context
                         if crowdsourced_context != 'N/A':
@@ -1054,50 +1055,53 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                         score_breakdown.append("URLScan: No data available")
             
                 # IPQualityScore parsing for URLs/Domains
-                if 'IPQualityScore' in reports:
-                    ipqs_report = reports.get("IPQualityScore", {})
-                    if isinstance(ipqs_report, dict):
-                        try:
-                            score_ipqs = int(ipqs_report.get("risk_score", 0))
-                            vpn = ipqs_report.get("vpn", False)
-                            tor = ipqs_report.get("tor", False)
-                            proxy = ipqs_report.get("proxy", False)
-                            phishing = ipqs_report.get("phishing", False)
-                            malware = ipqs_report.get("malware", False)
-                            server = ipqs_report.get("server", "N/A")
-                            suspicious = ipqs_report.get("suspicious", False)
-            
-                            total_ipqs_score = (
-                                score_ipqs * 1 +
-                                (10 if vpn else 0) +
-                                (15 if tor else 0) +
-                                (5 if proxy else 0) +
-                                (20 if phishing else 0) +
-                                (30 if malware else 0) +
-                                (10 if suspicious else 0)
-                            )
-            
-                            ipqs_weighted_score = calculate_vendor_score("IPQualityScore", total_ipqs_score)
-                            total_score += ipqs_weighted_score
-                            malicious_count += 1 if total_ipqs_score > 0 else 0
-            
-                            score_breakdown.append(
-                                f"IPQualityScore:\n  Risk Score={score_ipqs}\n  VPN={vpn}\n"
-                                f"  Tor={tor}\n  Proxy={proxy}\n  Phishing={phishing}\n"
-                                f"  Malware={malware}\n  Server={server}\n  Suspicious={suspicious}\n"
-                                f"  IPQS Score Contribution (Weighted): {ipqs_weighted_score}"
-                            )
-            
-                            provider = check_trusted_provider("", "", server)
-                            if provider:
-                                trusted_provider_found = provider
-                                score_breakdown.append(f"  Domain is hosted on a trusted provider (ISP: {trusted_provider_found})...Proceed with caution")
-                            else:
-                                score_breakdown.append("  No Trusted Provider Detected in IPQualityScore")
-                        except Exception as e:
-                            print(f"DEBUG: Error in IPQualityScore parsing: {e}")
-                    else:
-                        score_breakdown.append("IPQualityScore: No data available")
+                ipqs_report = reports.get("IPQualityScore", {})
+                if isinstance(ipqs_report, str):
+                    ipqs_report = parse_ipqualityscore_report(ipqs_report)
+                
+                if isinstance(ipqs_report, dict) and ipqs_report:
+                    # Extract relevant fields from IPQualityScore report
+                    score_ipqs = int(ipqs_report.get("risk_score", 0))  # Risk score
+                    vpn = ipqs_report.get("vpn", False)                 # VPN flag
+                    tor = ipqs_report.get("tor", False)                 # TOR flag
+                    proxy = ipqs_report.get("proxy", False)             # Proxy flag
+                    phishing = ipqs_report.get("phishing", False)       # Phishing flag
+                    malware = ipqs_report.get("malware", False)         # Malware flag
+                    server = ipqs_report.get("server", False)
+                    suspicious = ipqs_report.get("suspicious", False)
+                    # Weights for each component
+                    risk_weight = 1        # Weight for risk score
+                    vpn_weight = 10        # VPN increases score by 10 if True
+                    tor_weight = 15        # TOR increases score by 15 if True
+                    proxy_weight = 5       # Proxy increases score by 5 if True
+                    phishing_weight = 20   # Phishing increases score by 20 if True
+                    malware_weight = 30    # Malware increases score by 30 if True
+                    suspicious_weight = 40
+                
+                    # Calculate total score for IPQualityScore by applying the weights
+                    total_ipqs_score = (
+                        score_ipqs * risk_weight +
+                        (vpn_weight if vpn else 0) +
+                        (tor_weight if tor else 0) +
+                        (proxy_weight if proxy else 0) +
+                        (phishing_weight if phishing else 0) +
+                        (malware_weight if malware else 0) +
+                        (suspicious_weight if suspicious else 0)
+                    )
+                
+                    # Update the total score and add to breakdown
+                    ipqs_weighted_score = calculate_vendor_score("IPQualityScore", total_ipqs_score)
+                    total_score += ipqs_weighted_score
+                    malicious_count += 1 if total_ipqs_score > 0 else 0
+                
+                    score_breakdown.append(
+                        f"IPQualityScore:\n  Risk Score={score_ipqs}\n  VPN={vpn}\n"
+                        f"  Tor={tor}\n  Proxy={proxy}\n  Phishing={phishing}\n"
+                        f"  Malware={malware}\n  Server={server}\n  Suspicious={suspicious}\n  IPQS Score Contribution: {ipqs_weighted_score}"
+                    )
+                    
+                else:
+                    score_breakdown.append("IPQualityScore: No data available")
                 
                 # AlienVault parsing for URLs/Domains
                 if 'AlienVault' in reports:
@@ -1171,99 +1175,85 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                         print(f"DEBUG: Error in Borealis parsing: {e}")
             
                 # AUWL parsing for URLs/Domains
-                if "AUWL" in borealis_report:
+                if "AUWL" in borealis_report.get("modules", {}):
                     try:
-                        auwl_report = borealis_report.get("AUWL", [])
+                        auwl_report = borealis_report["modules"].get("AUWL", [])
                         phishing_count = 0
                         for cluster in auwl_report:
                             cluster_name = cluster.get('clusterName', 'N/A')
                             cluster_category = cluster.get('clusterCategory', 'N/A')
-                            if cluster_category.lower() == "phishing":
+                            if cluster_category.lower() in ["phishing", "malware", "suspicious"]:
                                 phishing_count += 1
                             score_breakdown.append(f"AUWL Cluster: {cluster_name}, Category: {cluster_category}")
                         
                         auwl_weighted_score = calculate_vendor_score("AUWL", phishing_count)
                         total_score += auwl_weighted_score
                         malicious_count += phishing_count
-                        score_breakdown.append(f"AUWL: - Score Contribution: {auwl_weighted_score}")
+                        score_breakdown.append(f"AUWL: Score Contribution: {auwl_weighted_score}")
                     except Exception as e:
                         print(f"DEBUG: Error in AUWL parsing: {e}")
                 else:
                     score_breakdown.append("AUWL: No relevant data found.")
             
                 # AlphabetSoup parsing (DGA detection)
-                if "ALPHABETSOUP" in borealis_report:
-                    try:
-                        alphabetsoup_report = borealis_report.get("ALPHABETSOUP", {})
-                        
-                        # Check if DGA is detected
-                        dga_detected = alphabetsoup_report.get("isDGA", False)
-                        
-                        if dga_detected:
-                            # If DGA is detected, add a score contribution
-                            alphabetsoup_weighted_score = calculate_vendor_score("ALPHABETSOUP", 1)
-                            total_score += alphabetsoup_weighted_score
-                            malicious_count += 1
-                            score_breakdown.append(f"AlphabetSoup: DGA Detected (malicious) - Score Contribution: {alphabetsoup_weighted_score}")
-                        else:
-                            score_breakdown.append("AlphabetSoup: No DGA detected")
-                    
-                    except Exception as e:
-                        print(f"DEBUG: Error in AlphabetSoup parsing: {e}")
-                else:
-                    score_breakdown.append("AlphabetSoup: No relevant data found.")
+                # if "ALPHABETSOUP" in borealis_report.get("modules", {}):
+                #     try:
+                #         alphabetsoup_report = borealis_report["modules"].get("ALPHABETSOUP", {})
+                #         dga_detected = alphabetsoup_report.get("isDGA", False)
+                #         if dga_detected:
+                #             alphabetsoup_weighted_score = calculate_vendor_score("ALPHABETSOUP", 1)
+                #             total_score += alphabetsoup_weighted_score
+                #             malicious_count += 1
+                #             score_breakdown.append(f"AlphabetSoup: DGA Detected (malicious) - Score Contribution: {alphabetsoup_weighted_score}")
+                #         else:
+                #             score_breakdown.append("AlphabetSoup: No DGA detected")
+                #     except Exception as e:
+                #         print(f"DEBUG: Error in AlphabetSoup parsing: {e}")
+                # else:
+                #     score_breakdown.append("AlphabetSoup: No relevant data found.")
             
-                # Top1M parsing (Majestic, Tranco, Cisco block detection)
-                if "TOP1MILLION" in borealis_report:
-                    try:
-                        top1m_report = borealis_report.get("TOP1MILLION", [])
+                # # Top1M parsing (Majestic, Tranco, Cisco block detection)
+                # if "TOP1MILLION" in borealis_report.get("modules", {}):
+                #     try:
+                #         top1m_report = borealis_report["modules"].get("TOP1MILLION", [])
+                #         blocked_by = []
                         
-                        # Initialize counters
-                        blocked_by = []
+                #         for entry in top1m_report:
+                #             list_name = entry.get("listName", "Unknown")
+                #             in_list = entry.get("inList", False)
+                #             if in_list:
+                #                 blocked_by.append(list_name)
+                #                 rank = entry.get("rank", "N/A")
+                #                 score_breakdown.append(f"  {list_name.capitalize()} list - In List: {in_list}, Rank: {rank}")
                         
-                        # Loop through each entry in TOP1MILLION report
-                        for entry in top1m_report:
-                            list_name = entry.get("listName", "Unknown")
-                            in_list = entry.get("inList", False)
-                            
-                            # If the domain is blocked in this list, include it in scoring
-                            if in_list:
-                                blocked_by.append(list_name)
-                                
-                                # Optionally include rank or other details in the breakdown
-                                rank = entry.get("rank", "N/A")
-                                score_breakdown.append(f"  {list_name.capitalize()} list - In List: {in_list}, Rank: {rank}")
-                        
-                        # Calculate score based on the number of lists blocking this domain
-                        if blocked_by:
-                            top1m_weighted_score = calculate_vendor_score("TOP1MILLION", len(blocked_by))
-                            total_score += top1m_weighted_score
-                            malicious_count += 1
-                            score_breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)} - Score Contribution: {top1m_weighted_score}")
-                        else:
-                            score_breakdown.append("Top1M: Not blocked by Majestic, Tranco, or Cisco")
-                    
-                    except Exception as e:
-                        print(f"DEBUG: Error in Top1M parsing: {e}")
-                else:
-                    score_breakdown.append("Top1M: No relevant data found.")
+                #         if blocked_by:
+                #             top1m_weighted_score = calculate_vendor_score("TOP1MILLION", len(blocked_by))
+                #             total_score += top1m_weighted_score
+                #             malicious_count += 1
+                #             score_breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)} - Score Contribution: {top1m_weighted_score}")
+                #         else:
+                #             score_breakdown.append("Top1M: Not blocked by Majestic, Tranco, or Cisco")
+                #     except Exception as e:
+                #         print(f"DEBUG: Error in Top1M parsing: {e}")
+                # else:
+                #     score_breakdown.append("Top1M: No relevant data found.")
             
                 # Stonewall parsing (approval for blocking)
-                if "STONEWALL" in borealis_report:
-                    try:
-                        stonewall_report = borealis_report.get("STONEWALL", {})
-                        approved_for_blocking = stonewall_report.get("approved", False)
-                        if approved_for_blocking:
-                            stonewall_weighted_score = calculate_vendor_score("STONEWALL", 1)
-                            total_score += stonewall_weighted_score
-                            malicious_count += 1
-                            score_breakdown.append(f"Stonewall: Approved for blocking (malicious) - Score Contribution: {stonewall_weighted_score}")
-                        else:
-                            score_breakdown.append("Stonewall: Not approved for blocking")
-                    except Exception as e:
-                        print(f"DEBUG: Error in Stonewall parsing: {e}")
-                else:
-                    score_breakdown.append("Stonewall: No relevant data found.")
+                # if "STONEWALL" in borealis_report.get("modules", {}):
+                #     try:
+                #         stonewall_report = borealis_report["modules"].get("STONEWALL", {})
+                #         approved_for_blocking = stonewall_report.get("decision", "").lower() == "approved"
+                #         if approved_for_blocking:
+                #             stonewall_weighted_score = calculate_vendor_score("STONEWALL", 1)
+                #             total_score += stonewall_weighted_score
+                #             malicious_count += 1
+                #             score_breakdown.append(f"Stonewall: Approved for blocking (malicious) - Score Contribution: {stonewall_weighted_score}")
+                #         else:
+                #             score_breakdown.append("Stonewall: Not approved for blocking")
+                #     except Exception as e:
+                #         print(f"DEBUG: Error in Stonewall parsing: {e}")
+                # else:
+                #     score_breakdown.append("Stonewall: No relevant data found.")
     
             # Hash-based IOC
             elif ioc_type == "hash":
@@ -1529,7 +1519,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
             
             # Output final score and verdict in the breakdown
             verdict_str = f"Verdict: {verdict}"
-            total_score_str = f"Total Score: {total_score}"
+            total_score_str = f"Total Score: {total_score}\n"
                         
             # Add verdict and score to the breakdown
             score_breakdown.insert(0, verdict_str)
@@ -1700,6 +1690,20 @@ def extract_borealis_info(borealis_report):
     breakdown = []
     total_score = 0
 
+    # Define vendor weights for scoring
+    vendor_weights = {
+        "SPUR": 1,
+        "STONEWALL": 1,
+        "AUWL": 1,
+        "ALPHABETSOUP": 1,
+        "TOP1MILLION": 1,
+    }
+
+    # Nested function to calculate vendor score with recentness check
+    def calculate_vendor_score(vendor, score):
+        weight_factor = vendor_weights.get(vendor, 0)
+        return score * weight_factor
+
     # Spur Section
     spur_info = borealis_report.get("modules", {}).get("SPUR", [])
     if spur_info and isinstance(spur_info, list):
@@ -1726,6 +1730,10 @@ def extract_borealis_info(borealis_report):
         breakdown.append(f"  Decision: {decision}")
         breakdown.append(f"  Reason: {reason}")
         breakdown.append(f"  Filename: {filename}")
+        if decision.lower() == "approved":
+            stonewall_score = calculate_vendor_score("STONEWALL", 1)
+            total_score += stonewall_score
+            breakdown.append(f"  * Stonewall approved for blocking, added {stonewall_score} to score.")
     else:
         breakdown.append("Stonewall: No relevant data available.")
 
@@ -1741,13 +1749,46 @@ def extract_borealis_info(borealis_report):
 
                 # Check for malicious terms in the clusterCategory
                 if cluster_category.lower() in ['phishing', 'malware', 'suspicious']:
-                    total_score += 20  # Add to the malicious score if the category is malicious
-                    breakdown.append(f"  * AUWL category '{cluster_category}' indicates malicious activity. Added 20 to score.")
+                    auwl_score = calculate_vendor_score("AUWL", 20)
+                    total_score += auwl_score
+                    breakdown.append(f"  * AUWL category '{cluster_category}' indicates malicious activity. Added {auwl_score} to score.")
         else:
             breakdown.append("AUWL: No relevant data available.")
 
-    # Return the breakdown and the updated total_score
-    #print(f"DEBUG: Joining fields, current values: {breakdown}")
+    # AlphabetSoup Section (DGA detection)
+    alphabetsoup_info = borealis_report.get("modules", {}).get("ALPHABETSOUP", {})
+    if alphabetsoup_info and isinstance(alphabetsoup_info, dict):
+        dga_detected = alphabetsoup_info.get("isDGA", False)
+        if dga_detected:
+            alphabetsoup_score = calculate_vendor_score("ALPHABETSOUP", 1)
+            total_score += alphabetsoup_score
+            breakdown.append(f"AlphabetSoup: DGA Detected - Score Contribution: {alphabetsoup_score}")
+        else:
+            breakdown.append("AlphabetSoup: No DGA detected.")
+    else:
+        breakdown.append("AlphabetSoup: No relevant data available.")
+
+    # Top1M Section (Majestic, Tranco, Cisco block detection)
+    top1m_info = borealis_report.get("modules", {}).get("TOP1MILLION", [])
+    if top1m_info and isinstance(top1m_info, list):
+        blocked_by = []
+        for entry in top1m_info:
+            list_name = entry.get("listName", "Unknown")
+            in_list = entry.get("inList", False)
+            if in_list:
+                blocked_by.append(list_name)
+                rank = entry.get("rank", "N/A")
+                breakdown.append(f"{list_name.capitalize()} list - In List: {in_list}, Rank: {rank}")
+        
+        if blocked_by:
+            top1m_score = calculate_vendor_score("TOP1MILLION", len(blocked_by))
+            total_score += top1m_score
+            breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)} - Score Contribution: {top1m_score}")
+        else:
+            breakdown.append("Top1M: Not blocked by Majestic, Tranco, or Cisco")
+    else:
+        breakdown.append("Top1M: No relevant data found.")
+
     return "\n".join(breakdown), total_score
 
 
@@ -2251,11 +2292,11 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                     server = ""
                                 
                                 # Debug for IPQualityScore
-                                print(f"DEBUG: IPQualityScore Server: {server}")
+                                #print(f"DEBUG: IPQualityScore Server: {server}")
                                 
                                 # Check trusted provider
                                 provider = check_trusted_provider("", "", server)
-                                print(f"DEBUG: IPQS trusted provider found: {provider}")
+                                #print(f"DEBUG: IPQS trusted provider found: {provider}")
                                 
                                 if provider and provider not in trusted_provider_found:
                                     trusted_provider_found.append(provider)
