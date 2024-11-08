@@ -95,7 +95,7 @@ def get_censys_data(censys_api_key, censys_secret, query, status_output=None, pr
     return data_summary
 
 
-def search_cves_on_censys(censys_api_key, censys_secret, query, status_output=None, progress_bar=None):
+def search_cves_on_censys(censys_api_key, censys_secret, query, country=None, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
@@ -115,7 +115,7 @@ def search_cves_on_censys(censys_api_key, censys_secret, query, status_output=No
     }
 
     query_payload = {
-        "q": query
+        "q": f"{query} AND location.country:`{country}`"
     }
 
     cves_summary = []

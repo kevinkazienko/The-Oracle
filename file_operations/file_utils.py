@@ -78,7 +78,10 @@ def sanitize_and_defang(data, defang=True):
     return data
 
 def is_ip(s):
-    return re.match(r"^\d{1,3}(\.\d{1,3}){3}$", s) is not None
+    ipv4_pattern = r"^\d{1,3}(\.\d{1,3}){3}$"
+    ipv6_pattern = r"^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$"
+
+    return re.match(ipv4_pattern, s) is not None or re.match(ipv6_pattern, s) is not None
 
 def is_url(s):
     # Updated regular expression to handle subdomains, regions, and complex domains

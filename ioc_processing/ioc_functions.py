@@ -43,6 +43,7 @@ from api_interactions.shodan import get_shodan_report, search_shodan_cve_country
 from api_interactions.alienvault import get_alienvault_report
 from api_interactions.ipqualityscore import get_ipqualityscore_report, parse_ipqualityscore_report
 from api_interactions.greynoise import get_greynoise_report
+from api_interactions.mitre import get_mitre_cve_details
 from api_interactions.urlscan import (
     submit_url_to_urlscan,
     get_urlscan_report
@@ -564,7 +565,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
         "AbuseIPDB": 1,
         "AlienVault": 0.5,
         "GreyNoise": 1,
-        "IPQualityScore": 1,
+        "IPQualityScore": 0.5,
         "MalwareBazaar": 1,
         "URLScan": 1,
         "BinaryEdge": 1,
@@ -1420,6 +1421,38 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                         score_breakdown.append("Hybrid Analysis: No data available")
     
             elif ioc_type == "cve":
+
+                # Parse MITRE report for CVEs
+                if ioc_type == "cve" and "MITRE" in reports:
+                    mitre_report = reports["MITRE"]
+                    if isinstance(mitre_report, dict):
+                        score_breakdown.append("MITRE CVE Report:")
+                        cve_id = mitre_report.get("cve_id", "N/A")
+                        cvss_v3_1 = mitre_report.get("cvss_v3_1", {})
+            
+                        # CVSS score from MITRE data
+                        cvss_score = cvss_v3_1.get("baseScore", "N/A")
+                        if isinstance(cvss_score, (int, float)):
+                            total_score += cvss_score
+                            malicious_count += 1
+                        severity = cvss_v3_1.get("baseSeverity", "N/A")
+            
+                        score_breakdown.append(f"  CVE: {cve_id}, CVSS Score: {cvss_score}, Severity: {severity}")
+            
+                        # Include additional relevant MITRE data that may influence the score or context
+                        affected_products = mitre_report.get("affected_products", [])
+                        for product in affected_products:
+                            score_breakdown.append(f"    - Product: {product.get('product', 'N/A')}, Vendor: {product.get('vendor', 'N/A')}")
+            
+                        adp_info = mitre_report.get("adp_info", [])
+                        for adp in adp_info:
+                            title = adp.get("title", "N/A")
+                            score_breakdown.append(f"  ADP Information: {title}")
+                            for timeline_event in adp.get("timeline", []):
+                                event_time = timeline_event.get("time", "N/A")
+                                description = timeline_event.get("description", "N/A")
+                                score_breakdown.append(f"    - Event Time: {event_time}, Description: {description}")
+
                 
                 if 'Shodan' in reports:
                     shodan_report = reports.get("Shodan", {})
@@ -1514,8 +1547,8 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                     verdict = "Not Malicious"
                 elif malicious_count >= high_malicious_count_threshold:
                     verdict = "Malicious" if recent_analysis else "Probably Malicious"
-                elif total_score > 0 and ("trackers" in tags or "external-resources" in tags):
-                    verdict = "Suspicious"
+                # elif total_score > 0 and ("trackers" in tags or "external-resources" in tags):
+                #     verdict = "Suspicious"
             
             # Output final score and verdict in the breakdown
             verdict_str = f"Verdict: {verdict}"
@@ -1834,7 +1867,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
         + len(selected_category['urls']) * 9  # 9 API calls per URL
         + len(selected_category['domains']) * 9  # 9 API calls per domain (if treated separately from URLs)
         + len(selected_category['hashes']) * 5  # 4 API calls per hash
-        + len(selected_category['cves']) * 2
+        + len(selected_category['cves']) * 3
         + len(selected_category['orgs']) * 2
         + len(selected_category['ports']) * 3
         + len(selected_category['products']) * 3
@@ -2843,8 +2876,16 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
 
                 elif category == "cves":
+                    report_mitre_cve = None
                     report_shodan_cve = None
                     report_censys_cve = None
+
+
+                    # Fetch the MITRE CVE report
+                    report_mitre_cve = get_mitre_cve_details(entry, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+
                 
                     # Fetch the Shodan CVE report
                 
@@ -2869,6 +2910,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     # Calculate verdict and score breakdown
                     total_score, score_breakdown, verdict = calculate_total_malicious_score(
                         {
+                            "MITRE": report_mitre_cve,
                             "Shodan": report_shodan_cve,  # Ensure the report is passed correctly
                             "Censys": report_censys_cve,
                             
@@ -2878,6 +2920,42 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     )
                     combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
                     combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
+
+
+                    if report_mitre_cve and isinstance(report_mitre_cve, dict):
+                        combined_report += f"\nMITRE Report for {entry}:\n"
+                        combined_report += f"  - CVE ID: {report_mitre_cve.get('cve_id')}\n"
+                        combined_report += f"  - State: {report_mitre_cve.get('state')}\n"
+                        combined_report += f"  - Title: {report_mitre_cve.get('title')}\n"
+                        combined_report += f"  - Assigner Organization ID: {report_mitre_cve.get('assigner_org_id')}\n"
+                        combined_report += f"  - Assigner Short Name: {report_mitre_cve.get('assigner_short_name')}\n"
+                        combined_report += f"  - Date Published: {report_mitre_cve.get('date_published')}\n"
+                        combined_report += f"  - Description: {report_mitre_cve.get('description')}\n"
+                        
+                        # Display CVSS v3.1 Metrics if available
+                        cvss = report_mitre_cve.get("cvss_v3_1", {})
+                        if cvss:
+                            combined_report += f"  - CVSS Score: {cvss.get('baseScore', 'N/A')}\n"
+                            combined_report += f"  - Severity: {cvss.get('baseSeverity', 'N/A')}\n"
+                            combined_report += f"  - Attack Vector: {cvss.get('attackVector', 'N/A')}\n"
+                        
+                        # Affected Products
+                        combined_report += "  - Affected Products:\n"
+                        for product in report_mitre_cve.get("affected_products", []):
+                            combined_report += f"    - Product: {product.get('product')}, Vendor: {product.get('vendor')}\n"
+                        
+                        # References
+                        combined_report += "  - References:\n"
+                        for ref in report_mitre_cve.get("references", []):
+                            combined_report += f"    - {ref}\n"
+                        
+                        # ADP Info
+                        for adp_info in report_mitre_cve.get("adp_info", []):
+                            combined_report += f"  - ADP Title: {adp_info.get('title')}\n"
+                            for timeline_event in adp_info.get("timeline", []):
+                                combined_report += f"      - Event Time: {timeline_event.get('time')}, Description: {timeline_event.get('description')}\n"
+                    
+                    combined_report += "\n"
                     
                 
                     # Check if the Shodan CVE report is valid and process accordingly
@@ -2932,7 +3010,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         # Extract and display limited matches
                         if matches and isinstance(matches, list):
                             combined_report += "  - Matches:\n"
-                            for match in matches[:10]:  # Limit to 2 matches
+                            for match in matches[:5]:  # Limit to 2 matches
                                 ip_str = match.get("ip_str", "N/A")
                                 ports = match.get("port", [])
                                 org = match.get("org", "N/A")

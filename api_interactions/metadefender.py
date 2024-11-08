@@ -116,8 +116,8 @@ def process_metadefender_ip_report(report):
     subdivision = subdivisions[0].get("name", "N/A") if subdivisions else "N/A"
 
     sources_info = "\n".join(
-        f"    - Provider: {source.get('provider', 'N/A')}, Status: {source.get('status', 'N/A')}, "
-        f"Assessment: {source.get('assessment', 'N/A')}, Last Updated: {source.get('update_time', 'N/A')}"
+        f"    - Provider: {source.get('provider', 'N/A')}\n     - Status: {source.get('status', 'N/A')}\n "
+        f"    - Assessment: {source.get('assessment', 'N/A')}\n     - Last Updated: {source.get('update_time', 'N/A')}"
         for source in sources
     )
 

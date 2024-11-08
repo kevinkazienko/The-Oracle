@@ -7,8 +7,15 @@ from file_operations.file_utils import is_ip, is_url, is_domain
 from IPython.display import clear_output, HTML, display  # Added import
 
 def is_ip(ioc):
-    """Check if the IOC is a valid IP address."""
-    return re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ioc) is not None
+    """Check if the IOC is a valid IPv4 or IPv6 address."""
+    ipv4_pattern = r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"
+    ipv6_pattern = (
+        r"^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|"  # Full IPv6 address
+        r"^([0-9a-fA-F]{1,4}:){1,7}:$|"               # Leading zeros omitted
+        r"^::([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}$"  # Zero-compressed
+    )
+    
+    return re.match(ipv4_pattern, ioc) is not None or re.match(ipv6_pattern, ioc) is not None
 
 def get_ipqualityscore_report(ioc, full_report=False, status_output=None, progress_bar=None):
     if status_output:
