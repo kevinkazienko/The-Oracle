@@ -2037,10 +2037,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
                     if trusted_provider_found:
                         combined_report += f"Verdict: {verdict} (Score: {total_score}) (Belongs to {trusted_provider_found})\n"
-                        combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
+                        combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
                     else:
                         combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
-                        combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
+                        combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
                  
                                         
                         # VirusTotal Report
@@ -2371,10 +2371,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     if trusted_provider_found:
                         provider_list = ', '.join(trusted_provider_found)
                         combined_report += f"Verdict: {verdict} (Score: {total_score}) (Hosted on: {provider_list})\n"
-                        combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
+                        combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
                     else:
                         combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
-                        combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
+                        combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
                     # #print(f"DEBUG: trusted_provider_found before appending to verdict = {trusted_provider_found}")
                     # if trusted_provider_found:
                     #     combined_report += f"Verdict: {verdict} (Score: {total_score}) (Hosted on {trusted_provider_found})\n\n"
@@ -2567,7 +2567,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         ioc_type="hash"
                     )
                     combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
-                    combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
+                    combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
                 
                     # VirusTotal Hash Report
                     if report_vt_hash and report_vt_hash != f"Failed to fetch VirusTotal hash report for {entry}.":
@@ -2919,7 +2919,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         ioc_type="cve"
                     )
                     combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
-                    combined_report += f"Scoring is to be taken with a HUGE grain of salt...Please use judgement.\n\n"
+                    combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
 
 
                     if report_mitre_cve and isinstance(report_mitre_cve, dict):
