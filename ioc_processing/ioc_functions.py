@@ -146,20 +146,43 @@ def wrap_text(text, width=80, indent=4):
 
 
 def extract_last_analysis_date(report):
+    # Retrieve last_analysis_date from the nested structure in report
     last_analysis_date = report.get('data', {}).get('attributes', {}).get('last_analysis_date')
-    
-    # Convert ISO 8601 formatted strings to UTC-aware datetime
+
+    # If last_analysis_date is None, print debug info and return None early
+    if last_analysis_date is None:
+        print("DEBUG: last_analysis_date is None or missing in the report data.")
+        return None
+
+    # Handle ISO 8601 format (typically from URLScan)
     if isinstance(last_analysis_date, str):
         try:
-            # Parse ISO 8601 format and convert to UTC
-            last_analysis_date = datetime.fromisoformat(last_analysis_date.replace("Z", "+00:00"))
+            # Check if format includes a timezone
+            if "T" in last_analysis_date and "Z" in last_analysis_date:
+                # Parse ISO 8601 format with timezone (e.g., URLScan format)
+                last_analysis_date = datetime.fromisoformat(last_analysis_date.replace("Z", "+00:00"))
+            else:
+                # Assume UTC for timezone-naive datetime strings (e.g., VirusTotal format)
+                last_analysis_date = datetime.strptime(last_analysis_date, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
         except ValueError as e:
-            print(f"ERROR: Failed to parse date: {e}")
+            print(f"ERROR: Failed to parse date from string '{last_analysis_date}': {e}")
             return None
-    elif isinstance(last_analysis_date, int):
-        # If it's already a timestamp, convert it to UTC-aware datetime
-        last_analysis_date = datetime.utcfromtimestamp(last_analysis_date).replace(tzinfo=timezone.utc)
     
+    # Handle integer timestamp format (if applicable)
+    elif isinstance(last_analysis_date, int):
+        try:
+            # Convert Unix timestamp to UTC-aware datetime
+            last_analysis_date = datetime.utcfromtimestamp(last_analysis_date).replace(tzinfo=timezone.utc)
+        except ValueError as e:
+            print(f"ERROR: Failed to parse date from timestamp '{last_analysis_date}': {e}")
+            return None
+    
+    else:
+        # If last_analysis_date is neither string nor integer, print debug and return None
+        print(f"DEBUG: Unexpected format for last_analysis_date: {last_analysis_date}")
+        return None
+    
+    print(f"DEBUG: Successfully parsed last_analysis_date: {last_analysis_date}")
     return last_analysis_date
 
 
@@ -1730,12 +1753,27 @@ def extract_borealis_info(borealis_report):
         "AUWL": 1,
         "ALPHABETSOUP": 1,
         "TOP1MILLION": 1,
+        "SAFEBROWSING": 1,
     }
 
     # Nested function to calculate vendor score with recentness check
     def calculate_vendor_score(vendor, score):
         weight_factor = vendor_weights.get(vendor, 0)
         return score * weight_factor
+
+    # SafeBrowsing
+    safebrowsing_info = borealis_report.get("modules", {}).get("SAFEBROWSING", [])
+    if safebrowsing_info and isinstance(safebrowsing_info, list):
+        breakdown.append("SAFEBROWSING:")
+        for safebrowsing_entry in safebrowsing_info:
+            decision = safebrowsing_entry.get("decision", "N/A")
+            breakdown.append(f"  Decision: {decision}")
+            if decision.lower() != "safe":
+                safebrowsing_score = calculate_vendor_score("SAFEBROWSING", 1)
+                total_score += safebrowsing_score
+                breakdown.append(f"  Google SafeBrowsing decision is NOT Safe, added {safebrowsing_score} to score.")
+            else:
+                breakdown.append(f"  Google SafeBrowsing decision is Safe, added {safebrowsing_score} to score.")
 
     # Spur Section
     spur_info = borealis_report.get("modules", {}).get("SPUR", [])
