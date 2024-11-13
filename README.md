@@ -44,13 +44,13 @@ The Oracle is designed for security analysts, researchers and enthusiasts - faci
 - **MetaDefender Integration**: Integrated MetaDefender as a new source for validation.
 - **User-friendly Configuration**: Simple setup with API key configuration and easy-to-use functions.
 - **Extensible Framework**: Designed for easy addition of more APIs or enhancement of existing functionalities.
-- **Modular Design**: Functions are now separated into different modules for better maintainability and scalability. [12/03/2023]
-- **Input Sanitization**: Enhanced input processing to remove unnecessary port numbers and other artifacts. [12/03/2023]
+- **Modular Design**: Functions are now separated into different modules for better maintainability and scalability [12/03/2023].
+- **Input Sanitization**: Enhanced input processing to remove unnecessary port numbers and other artifacts [12/03/2023].
 - **Report Output Defanging**: Enhanced output reporting with IP and domain/URL de-weaponizing.
 - **Automatic IOC Type Detection**: The script now automatically detects the type of IOC being searched.
-- **Search CVE's**: Search for devices vulnerable to CVE's using Shodan's vuln filter. [10/25/2024]
-- **Search Organizations**: Search Shodan using the org filter. [10/25/2024]
-- **Search Port and Products**: Search by port number or product name and country. [10/29/2024]
+- **Search CVE's**: Search for devices vulnerable to CVE's using Shodan's vuln filter [10/25/2024].
+- **Search Organizations**: Search Shodan using the org filter [10/25/2024].
+- **Search Port and Products**: Search by port number or product name and country [10/29/2024].
 
 ## Getting Started
 
