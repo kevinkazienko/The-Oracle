@@ -53,8 +53,9 @@ from api.api_keys import censys_api_key, censys_secret, metadefender_api_key
 from api_interactions.borealis import request_borealis, format_borealis_report
 from api_interactions.binaryedge import get_binaryedge_report, search_binaryedge_by_port, search_binaryedge_product, search_binaryedge_product_port_country
 from api_interactions.metadefender import analyze_with_metadefender, process_metadefender_ip_report, process_metadefender_url_report, process_metadefender_hash_report
-from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report
+from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report, submit_url_to_hybrid_analysis, parse_hybrid_analysis_url_report
 from api_interactions.malshare import get_malshare_hash_report
+
 
 # Configure logging to file
 #logging.basicConfig(filename='debug.log', level=logging.DEBUG)
@@ -561,6 +562,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     score_breakdown = []
     malicious_count = 0
     total_sources = 0
+    safebrowsing_score = 0
     trusted_provider_found = None
     breakdown_str = ""
     signature_info = {}
@@ -930,6 +932,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     
             # URL and Domain-based IOC
             elif ioc_type in ["url", "domain"]:
+                recent_analysis = None
                 # VirusTotal parsing
                 if 'VirusTotal' in reports:
                     vt_report = reports['VirusTotal']
@@ -1190,6 +1193,83 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                             print(f"DEBUG: Error in MetaDefender parsing: {e}")
                     else:
                         score_breakdown.append("MetaDefender: No data available")
+
+                # Hybrid Analysis Parsing for Score Breakdown
+                if 'Hybrid-Analysis' in reports:
+                    hybrid_analysis_report = reports.get("Hybrid-Analysis", {})
+                    if isinstance(hybrid_analysis_report, dict):
+                        try:
+                            # General information with debug output
+                            report_id = hybrid_analysis_report.get("id", "N/A")
+                            submission_type = hybrid_analysis_report.get("submission_type", "N/A")
+                            finished = hybrid_analysis_report.get("finished", False)
+                            sha256 = hybrid_analysis_report.get("sha256", "N/A")
+                
+                            print(f"DEBUG: Processing Hybrid-Analysis report ID: {report_id}")
+                
+                            # Initialize score for Hybrid Analysis
+                            hybrid_analysis_score = 0
+                            
+                            # Process `scanners` for scoring with debug
+                            scanners = hybrid_analysis_report.get("scanners", [])
+                            for scanner in scanners:
+                                status = scanner.get("status", "N/A")
+                                print(f"DEBUG: Scanner '{scanner.get('name', 'N/A')}' status: {status}")
+                                
+                                if status == "unsure":
+                                    hybrid_analysis_score += 0.5
+                                elif status not in ["no-classification", "no-result", "clean"]:
+                                    hybrid_analysis_score += 1  # Score for any other status
+                            
+                            # Process `scanners_v2` for scoring with debug and None check
+                            scanners_v2 = hybrid_analysis_report.get("scanners_v2", {})
+                            for scanner_key, scanner in scanners_v2.items():
+                                if scanner:  # Ensure the scanner data is not None
+                                    status = scanner.get("status", "N/A")
+                                    print(f"DEBUG: Scanner_v2 '{scanner.get('name', 'N/A')}' status: {status}")
+                                    
+                                    if status == "unsure":
+                                        hybrid_analysis_score += 0.5
+                                    elif status not in ["no-classification", "no-result", "clean"]:
+                                        hybrid_analysis_score += 1  # Score for any other status
+                
+                            # Calculate weighted score and update total score
+                            hybrid_analysis_weighted_score = calculate_vendor_score("Hybrid-Analysis", hybrid_analysis_score)
+                            total_score += hybrid_analysis_weighted_score
+                            malicious_count += 1 if hybrid_analysis_score > 0 else 0
+                
+                            # Format and append Hybrid Analysis details to score breakdown
+                            score_breakdown.append(
+                                f"Hybrid-Analysis:\n  Report ID: {report_id}\n"
+                                f"  Submission Type: {submission_type}\n  Finished: {'Yes' if finished else 'No'}\n"
+                                f"  SHA256: {sha256}\n  Score Contribution (Weighted): {hybrid_analysis_weighted_score}"
+                            )
+                            
+                            # Add details of each scanner from `scanners` and `scanners_v2` with debug info
+                            for scanner in scanners:
+                                score_breakdown.append(
+                                    f"  Scanners:\n"
+                                    f"    {scanner['name']}:\n"
+                                    f"      Status: {scanner['status']}\n"
+                                    f"      Progress: {scanner['progress']}"
+                                )
+                                score_breakdown.append(
+                                    f"  Scanners v2:"
+                                )
+                            for scanner_key, scanner in scanners_v2.items():
+                                if scanner:  # Only append if scanner is not None
+                                    score_breakdown.append(
+                                        f"    {scanner.get('name', 'N/A')}:\n"
+                                        f"      Status: {scanner.get('status', 'N/A')}\n"
+                                        f"      Progress: {scanner.get('progress', 'N/A')}"
+                                    )
+                
+                            print(f"DEBUG: Completed Hybrid-Analysis score breakdown with score: {hybrid_analysis_weighted_score}")
+                
+                        except Exception as e:
+                            print(f"DEBUG: Error in Hybrid-Analysis parsing for score breakdown: {e}")
+                    else:
+                        score_breakdown.append("Hybrid-Analysis: No data available")
             
                 # Borealis-related sections (AUWL, AlphabetSoup, etc.)
                 if borealis_breakdown:
@@ -1411,35 +1491,54 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                 # Hybrid Analysis parsing
                 if 'Hybrid-Analysis' in reports:
                     hybrid_analysis_report = reports.get("Hybrid-Analysis", {})
+                    
+                    # Handle list case
+                    if isinstance(hybrid_analysis_report, list) and hybrid_analysis_report:
+                        hybrid_analysis_report = hybrid_analysis_report[0]
+                    
+                    # Handle dictionary case
                     if isinstance(hybrid_analysis_report, dict):
                         # Extract relevant fields
                         file_name = hybrid_analysis_report.get("submit_name", hybrid_analysis_report.get("file_name", "N/A"))
-                        threat_score = hybrid_analysis_report.get("threat_score", 0) or 0
+                        threat_score = hybrid_analysis_report.get("threat_score", 0)
                         verdict = hybrid_analysis_report.get("verdict", "N/A")
-                        classification_tags = ''.join(hybrid_analysis_report.get("classification_tags", [])) if hybrid_analysis_report.get("classification_tags") else "None"
+                        classification_tags = ', '.join(hybrid_analysis_report.get("classification_tags", [])) if hybrid_analysis_report.get("classification_tags") else "None"
                         vx_family = hybrid_analysis_report.get("vx_family", "N/A")
                         total_processes = hybrid_analysis_report.get("total_processes", 0)
                         total_network_connections = hybrid_analysis_report.get("total_network_connections", 0)
-                        
-                        # Process MITRE ATT&CK data
+                
+                        # Handle MITRE ATT&CK data
                         mitre_attcks = hybrid_analysis_report.get("mitre_attcks", [])
                         mitre_attcks_str = ', '.join(
                             [f"{attack.get('tactic', 'N/A')} - {attack.get('technique', 'N/A')} (ID: {attack.get('attck_id', 'N/A')})" for attack in mitre_attcks]
-                        ) if isinstance(mitre_attcks, list) else mitre_attcks if isinstance(mitre_attcks, str) else "None"
+                        ) if isinstance(mitre_attcks, list) else "None"
+                
+                        # Calculate and add score
+                        ha_score = threat_score * 3  # Weight threat score by 3
+                        if total_processes > 5:
+                            ha_score += 5  # Bonus for many processes
+                        if len(classification_tags.split(', ')) > 2:
+                            ha_score += 5  # Bonus for multiple classification tags
                         
-                        # Calculate Hybrid-Analysis contribution based on threat score, weighted by 3
-                        ha_score = threat_score * 3
-                        total_score += ha_score  # Directly add the calculated score
+                        total_score += ha_score
                         
                         # Append Hybrid-Analysis details to the score breakdown
                         score_breakdown.append(
-                            f"Hybrid Analysis:\n  Verdict: {verdict}\n  Threat Score: {threat_score}\n"
-                            f"  File Name: {file_name}\n  Classification Tags: {classification_tags}\n"
-                            f"  Family: {vx_family}\n  Total Processes: {total_processes}\n"
+                            f"Hybrid-Analysis:\n"
+                            f"  Verdict: {verdict}\n"
+                            f"  Threat Score: {threat_score}\n"
+                            f"  File Name: {file_name}\n"
+                            f"  Classification Tags: {classification_tags}\n"
+                            f"  Family: {vx_family}\n"
+                            f"  Total Processes: {total_processes}\n"
                             f"  Total Network Connections: {total_network_connections}\n"
                             f"  MITRE ATT&CK Tactics: {mitre_attcks_str}\n"
                             f"  Hybrid Analysis Score Contribution: {ha_score}"
                         )
+                
+                        # Debugging score contribution
+                        print(f"DEBUG: Calculated HA Score: {ha_score}")
+                        print(f"DEBUG: Updated Total Score After Adding HA Score: {total_score}")
                     else:
                         score_breakdown.append("Hybrid Analysis: No data available")
     
@@ -1745,6 +1844,7 @@ def extract_censys_data_analysis(censys_report):
 def extract_borealis_info(borealis_report):
     breakdown = []
     total_score = 0
+    safebrowsing_score = 0
 
     # Define vendor weights for scoring
     vendor_weights = {
@@ -1902,7 +2002,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
     # Calculate total API calls based on the number of IOCs in each category
     total_api_calls = (
         len(selected_category['ips']) * 10  # 10 API calls per IP
-        + len(selected_category['urls']) * 9  # 9 API calls per URL
+        + len(selected_category['urls']) * 12  # 9 API calls per URL
         + len(selected_category['domains']) * 9  # 9 API calls per domain (if treated separately from URLs)
         + len(selected_category['hashes']) * 5  # 4 API calls per hash
         + len(selected_category['cves']) * 3
@@ -2270,6 +2370,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_ipqualityscore = None
                     report_binaryedge_url = None
                     report_metadefender_url = None
+                    report_hybrid_analysis_url = None
 
                     
                     urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
@@ -2313,6 +2414,11 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                 
                 
                     report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+
+                    # Hybrid Analysis Submission and Status Check
+                    report_hybrid_analysis_url = submit_url_to_hybrid_analysis(entry, status_output, progress_bar)
                     if progress_bar:
                         progress_bar.value += 1
                     
@@ -2401,6 +2507,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             "IPQualityScore": report_ipqualityscore,
                             "BinaryEdge": report_binaryedge_url,
                             "MetaDefender": report_metadefender_url,
+                            "Hybrid-Analysis": report_hybrid_analysis_url,
                         },
                         borealis_report,
                         ioc_type = "url" if ioc_type in ["url", "domain"] else ioc_type
@@ -2525,6 +2632,13 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += f"{report_metadefender_url}\n\n"
                     else:
                         combined_report += "Metadefender Report:\n  - No relevant data found.\n\n"
+
+                    # Hybrid-Analysis Report
+                    if report_hybrid_analysis_url:
+                        hybrid_analysis_report_str = parse_hybrid_analysis_url_report(report_hybrid_analysis_url)
+                        combined_report += f"{hybrid_analysis_report_str}\n\n"
+                    else:
+                        combined_report += "Hybrid-Analysis Report:\nNo data available or analysis still in progress.\n\n"
                 
                     # Borealis Report
                     if borealis_report:
@@ -2576,6 +2690,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                 
                 # Fetch Hybrid Analysis report
                     report_hybrid_analysis = get_hybrid_analysis_hash_report(entry, status_output, progress_bar)
+                    #print("DEBUG: Report returned from get_hybrid_analysis_hash_report:", report_hybrid_analysis)
                     if progress_bar:
                         progress_bar.value += 1
                 
@@ -2848,29 +2963,14 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
 
                     # Hybrid Analysis report
-                    if report_hybrid_analysis:
-                        #print(f"DEBUG: Hybrid Analysis report type: {type(report_hybrid_analysis)}")
-                        #print(f"DEBUG: Hybrid Analysis report content: {report_hybrid_analysis}")
-                    
-                        if isinstance(report_hybrid_analysis, list):  # Handle multiple reports
-                            parsed_report = parse_hybrid_analysis_report(report_hybrid_analysis)  # Now it selects only one report
-                            if parsed_report:
-                                combined_report += print_hybrid_analysis_report(parsed_report)
-                            else:
-                                combined_report += "Hybrid-Analysis Report: N/A\n\n"
-                        elif isinstance(report_hybrid_analysis, dict):  # Single report case
-                            #print(f"DEBUG: Processing single report: {report_hybrid_analysis}")
-                            parsed_report = parse_hybrid_analysis_report(report_hybrid_analysis)
-                            if parsed_report:
-                                combined_report += print_hybrid_analysis_report(parsed_report)
-                            else:
-                                combined_report += "Hybrid-Analysis Report: N/A\n\n"
-                        else:
-                            print(f"Unexpected type for Hybrid Analysis report: {type(report_hybrid_analysis)}")
-                            combined_report += "Hybrid-Analysis Report: N/A\n\n"
+                    parsed_report = parse_hybrid_analysis_report(report_hybrid_analysis)
+                    if parsed_report:
+                        # print("DEBUG: Parsed Hybrid Analysis Report Data:", parsed_report)
+                        combined_report += print_hybrid_analysis_report(parsed_report)
                     else:
-                        print("DEBUG: No Hybrid-Analysis report found")
+                        # print("DEBUG: Failed to parse Hybrid Analysis Report")
                         combined_report += "Hybrid-Analysis Report: N/A\n\n"
+                
 
 
                     # Malshare Report
