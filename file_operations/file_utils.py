@@ -89,11 +89,11 @@ def is_url(s):
     match = re.match(pattern, s)
 
     # Debug output to check what is being matched
-    print(f"DEBUG: Testing if '{s}' is a URL.")
-    if match:
-        print(f"DEBUG: '{s}' is detected as a URL.")
-    else:
-        print(f"DEBUG: '{s}' is NOT detected as a URL.")
+    #print(f"DEBUG: Testing if '{s}' is a URL.")
+    # if match:
+    #     print(f"DEBUG: '{s}' is detected as a URL.")
+    # else:
+    #     print(f"DEBUG: '{s}' is NOT detected as a URL.")
 
     return match is not None
 

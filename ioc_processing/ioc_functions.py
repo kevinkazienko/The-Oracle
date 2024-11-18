@@ -5,6 +5,7 @@ import json
 import textwrap
 import logging
 import ast
+import requests
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from IPython.display import clear_output, HTML, display
@@ -53,7 +54,8 @@ from api.api_keys import censys_api_key, censys_secret, metadefender_api_key
 from api_interactions.borealis import request_borealis, format_borealis_report
 from api_interactions.binaryedge import get_binaryedge_report, search_binaryedge_by_port, search_binaryedge_product, search_binaryedge_product_port_country
 from api_interactions.metadefender import analyze_with_metadefender, process_metadefender_ip_report, process_metadefender_url_report, process_metadefender_hash_report
-from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report, submit_url_to_hybrid_analysis, parse_hybrid_analysis_url_report
+from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report, submit_url_to_hybrid_analysis, parse_hybrid_analysis_url_report, fetch_hybrid_analysis_report, analyze_url_with_hybrid_analysis, HYBRID_ANALYSIS_BASE_URL
+from api.api_keys import hybridanalysis_api_key
 from api_interactions.malshare import get_malshare_hash_report
 
 
@@ -590,7 +592,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
         "AbuseIPDB": 1,
         "AlienVault": 0.5,
         "GreyNoise": 1,
-        "IPQualityScore": 0.5,
+        "IPQualityScore": 1,
         "MalwareBazaar": 1,
         "URLScan": 1,
         "BinaryEdge": 1,
@@ -1098,12 +1100,12 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                     suspicious = ipqs_report.get("suspicious", False)
                     # Weights for each component
                     risk_weight = 1        # Weight for risk score
-                    vpn_weight = 10        # VPN increases score by 10 if True
-                    tor_weight = 15        # TOR increases score by 15 if True
-                    proxy_weight = 5       # Proxy increases score by 5 if True
-                    phishing_weight = 20   # Phishing increases score by 20 if True
-                    malware_weight = 30    # Malware increases score by 30 if True
-                    suspicious_weight = 40
+                    vpn_weight = 1        # VPN increases score by 10 if True
+                    tor_weight = 1        # TOR increases score by 15 if True
+                    proxy_weight = 1       # Proxy increases score by 5 if True
+                    phishing_weight = 1   # Phishing increases score by 20 if True
+                    malware_weight = 1    # Malware increases score by 30 if True
+                    suspicious_weight = 1
                 
                     # Calculate total score for IPQualityScore by applying the weights
                     total_ipqs_score = (
@@ -1687,7 +1689,126 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
         print(f"ERROR: Exception encountered during score calculation: {str(e)}")
         return 0, f"Error during score calculation: {str(e)}", "Unknown"
 
+def extract_borealis_info(borealis_report):
+    breakdown = []
+    total_score = 0
+    safebrowsing_score = 0
 
+    # Define vendor weights for scoring
+    vendor_weights = {
+        "SPUR": 1,
+        "STONEWALL": 1,
+        "AUWL": 1,
+        "ALPHABETSOUP": 1,
+        "TOP1MILLION": 1,
+        "SAFEBROWSING": 1,
+    }
+
+    # Nested function to calculate vendor score with recentness check
+    def calculate_vendor_score(vendor, score):
+        weight_factor = vendor_weights.get(vendor, 0)
+        return score * weight_factor
+
+    # SafeBrowsing
+    safebrowsing_info = borealis_report.get("modules", {}).get("SAFEBROWSING", [])
+    if safebrowsing_info and isinstance(safebrowsing_info, list):
+        breakdown.append("SAFEBROWSING:")
+        for safebrowsing_entry in safebrowsing_info:
+            decision = safebrowsing_entry.get("decision", "N/A")
+            breakdown.append(f"  Decision: {decision}")
+            if decision.lower() != "safe":
+                safebrowsing_score = calculate_vendor_score("SAFEBROWSING", 1)
+                total_score += safebrowsing_score
+                breakdown.append(f"  Google SafeBrowsing decision is NOT Safe, added {safebrowsing_score} to score.")
+            else:
+                breakdown.append(f"  Google SafeBrowsing decision is Safe, added {safebrowsing_score} to score.")
+
+    # Spur Section
+    spur_info = borealis_report.get("modules", {}).get("SPUR", [])
+    if spur_info and isinstance(spur_info, list):
+        breakdown.append("SPUR:")
+        for spur_entry in spur_info:
+            asn = spur_entry.get("as", {}).get("number", "N/A")
+            org = spur_entry.get("as", {}).get("Organization", "N/A")
+            tunnels = spur_entry.get("tunnels", [])
+            for tunnel in tunnels:
+                tunnel_type = tunnel.get("type", "N/A")
+                operator = tunnel.get("operator", "N/A")
+                anonymous = tunnel.get("anonymous", "N/A")
+                breakdown.append(f"  ASN: {asn}\n  Organization: {org}\n  Tunnel Type: {tunnel_type}\n  Operator: {operator}\n  Anonymous: {anonymous}")
+    else:
+        breakdown.append("SPUR Info: No relevant data available.")
+
+    # Stonewall Section
+    stonewall_info = borealis_report.get("modules", {}).get("STONEWALL", {})
+    if stonewall_info and isinstance(stonewall_info, dict):
+        decision = stonewall_info.get("decision", "N/A")
+        reason = stonewall_info.get("reason", "N/A")
+        filename = stonewall_info.get("filename", "N/A")
+        breakdown.append("Stonewall:")
+        breakdown.append(f"  Decision: {decision}")
+        breakdown.append(f"  Reason: {reason}")
+        breakdown.append(f"  Filename: {filename}")
+        if decision.lower() == "approved":
+            stonewall_score = calculate_vendor_score("STONEWALL", 1)
+            total_score += stonewall_score
+            breakdown.append(f"  * Stonewall approved for blocking, added {stonewall_score} to score.")
+    else:
+        breakdown.append("Stonewall: No relevant data available.")
+
+    # AUWL Section
+    if borealis_report and "AUWL" in borealis_report.get("modules", {}):
+        auwl_entries = borealis_report["modules"]["AUWL"]
+        if isinstance(auwl_entries, list):
+            for entry in auwl_entries:
+                cluster_name = entry.get("clusterName", "N/A")
+                cluster_category = entry.get("clusterCategory", "N/A")
+                url = entry.get("url", "N/A")
+                breakdown.append(f"AUWL:\n  Cluster Name: {cluster_name}\n  Cluster Category: {cluster_category}\n  URL: {url}")
+
+                # Check for malicious terms in the clusterCategory
+                if cluster_category.lower() in ['phishing', 'malware', 'suspicious']:
+                    auwl_score = calculate_vendor_score("AUWL", 1)
+                    total_score += auwl_score
+                    breakdown.append(f"  * AUWL category '{cluster_category}' indicates malicious activity. Added {auwl_score} to score.")
+        else:
+            breakdown.append("AUWL: No relevant data available.")
+
+    # AlphabetSoup Section (DGA detection)
+    alphabetsoup_info = borealis_report.get("modules", {}).get("ALPHABETSOUP", {})
+    if alphabetsoup_info and isinstance(alphabetsoup_info, dict):
+        dga_detected = alphabetsoup_info.get("isDGA", False)
+        if dga_detected:
+            alphabetsoup_score = calculate_vendor_score("ALPHABETSOUP", 1)
+            total_score += alphabetsoup_score
+            breakdown.append(f"AlphabetSoup: DGA Detected - Score Contribution: {alphabetsoup_score}")
+        else:
+            breakdown.append("AlphabetSoup: No DGA detected.")
+    else:
+        breakdown.append("AlphabetSoup: No relevant data available.")
+
+    # Top1M Section (Majestic, Tranco, Cisco block detection)
+    top1m_info = borealis_report.get("modules", {}).get("TOP1MILLION", [])
+    if top1m_info and isinstance(top1m_info, list):
+        blocked_by = []
+        for entry in top1m_info:
+            list_name = entry.get("listName", "Unknown")
+            in_list = entry.get("inList", False)
+            if in_list:
+                blocked_by.append(list_name)
+                rank = entry.get("rank", "N/A")
+                breakdown.append(f"{list_name.capitalize()} list - In List: {in_list}, Rank: {rank}")
+        
+        if blocked_by:
+            top1m_score = calculate_vendor_score("TOP1MILLION", len(blocked_by))
+            total_score += top1m_score
+            breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)} - Score Contribution: {top1m_score}")
+        else:
+            breakdown.append("Top1M: Not blocked by Majestic, Tranco, or Cisco")
+    else:
+        breakdown.append("Top1M: No relevant data found.")
+
+    return "\n".join(breakdown), total_score
 
 
 def process_categories_field(categories):
@@ -1839,128 +1960,6 @@ def extract_censys_data_analysis(censys_report):
         censys_data += f"\nLast_updated: {censys_report.get('last_updated', 'N/A')}"
         return censys_data
     return "No relevant information available"
-    
-
-def extract_borealis_info(borealis_report):
-    breakdown = []
-    total_score = 0
-    safebrowsing_score = 0
-
-    # Define vendor weights for scoring
-    vendor_weights = {
-        "SPUR": 1,
-        "STONEWALL": 1,
-        "AUWL": 1,
-        "ALPHABETSOUP": 1,
-        "TOP1MILLION": 1,
-        "SAFEBROWSING": 1,
-    }
-
-    # Nested function to calculate vendor score with recentness check
-    def calculate_vendor_score(vendor, score):
-        weight_factor = vendor_weights.get(vendor, 0)
-        return score * weight_factor
-
-    # SafeBrowsing
-    safebrowsing_info = borealis_report.get("modules", {}).get("SAFEBROWSING", [])
-    if safebrowsing_info and isinstance(safebrowsing_info, list):
-        breakdown.append("SAFEBROWSING:")
-        for safebrowsing_entry in safebrowsing_info:
-            decision = safebrowsing_entry.get("decision", "N/A")
-            breakdown.append(f"  Decision: {decision}")
-            if decision.lower() != "safe":
-                safebrowsing_score = calculate_vendor_score("SAFEBROWSING", 1)
-                total_score += safebrowsing_score
-                breakdown.append(f"  Google SafeBrowsing decision is NOT Safe, added {safebrowsing_score} to score.")
-            else:
-                breakdown.append(f"  Google SafeBrowsing decision is Safe, added {safebrowsing_score} to score.")
-
-    # Spur Section
-    spur_info = borealis_report.get("modules", {}).get("SPUR", [])
-    if spur_info and isinstance(spur_info, list):
-        breakdown.append("SPUR:")
-        for spur_entry in spur_info:
-            asn = spur_entry.get("as", {}).get("number", "N/A")
-            org = spur_entry.get("as", {}).get("Organization", "N/A")
-            tunnels = spur_entry.get("tunnels", [])
-            for tunnel in tunnels:
-                tunnel_type = tunnel.get("type", "N/A")
-                operator = tunnel.get("operator", "N/A")
-                anonymous = tunnel.get("anonymous", "N/A")
-                breakdown.append(f"  ASN: {asn}\n  Organization: {org}\n  Tunnel Type: {tunnel_type}\n  Operator: {operator}\n  Anonymous: {anonymous}")
-    else:
-        breakdown.append("SPUR Info: No relevant data available.")
-
-    # Stonewall Section
-    stonewall_info = borealis_report.get("modules", {}).get("STONEWALL", {})
-    if stonewall_info and isinstance(stonewall_info, dict):
-        decision = stonewall_info.get("decision", "N/A")
-        reason = stonewall_info.get("reason", "N/A")
-        filename = stonewall_info.get("filename", "N/A")
-        breakdown.append("Stonewall:")
-        breakdown.append(f"  Decision: {decision}")
-        breakdown.append(f"  Reason: {reason}")
-        breakdown.append(f"  Filename: {filename}")
-        if decision.lower() == "approved":
-            stonewall_score = calculate_vendor_score("STONEWALL", 1)
-            total_score += stonewall_score
-            breakdown.append(f"  * Stonewall approved for blocking, added {stonewall_score} to score.")
-    else:
-        breakdown.append("Stonewall: No relevant data available.")
-
-    # AUWL Section
-    if borealis_report and "AUWL" in borealis_report.get("modules", {}):
-        auwl_entries = borealis_report["modules"]["AUWL"]
-        if isinstance(auwl_entries, list):
-            for entry in auwl_entries:
-                cluster_name = entry.get("clusterName", "N/A")
-                cluster_category = entry.get("clusterCategory", "N/A")
-                url = entry.get("url", "N/A")
-                breakdown.append(f"AUWL:\n  Cluster Name: {cluster_name}\n  Cluster Category: {cluster_category}\n  URL: {url}")
-
-                # Check for malicious terms in the clusterCategory
-                if cluster_category.lower() in ['phishing', 'malware', 'suspicious']:
-                    auwl_score = calculate_vendor_score("AUWL", 20)
-                    total_score += auwl_score
-                    breakdown.append(f"  * AUWL category '{cluster_category}' indicates malicious activity. Added {auwl_score} to score.")
-        else:
-            breakdown.append("AUWL: No relevant data available.")
-
-    # AlphabetSoup Section (DGA detection)
-    alphabetsoup_info = borealis_report.get("modules", {}).get("ALPHABETSOUP", {})
-    if alphabetsoup_info and isinstance(alphabetsoup_info, dict):
-        dga_detected = alphabetsoup_info.get("isDGA", False)
-        if dga_detected:
-            alphabetsoup_score = calculate_vendor_score("ALPHABETSOUP", 1)
-            total_score += alphabetsoup_score
-            breakdown.append(f"AlphabetSoup: DGA Detected - Score Contribution: {alphabetsoup_score}")
-        else:
-            breakdown.append("AlphabetSoup: No DGA detected.")
-    else:
-        breakdown.append("AlphabetSoup: No relevant data available.")
-
-    # Top1M Section (Majestic, Tranco, Cisco block detection)
-    top1m_info = borealis_report.get("modules", {}).get("TOP1MILLION", [])
-    if top1m_info and isinstance(top1m_info, list):
-        blocked_by = []
-        for entry in top1m_info:
-            list_name = entry.get("listName", "Unknown")
-            in_list = entry.get("inList", False)
-            if in_list:
-                blocked_by.append(list_name)
-                rank = entry.get("rank", "N/A")
-                breakdown.append(f"{list_name.capitalize()} list - In List: {in_list}, Rank: {rank}")
-        
-        if blocked_by:
-            top1m_score = calculate_vendor_score("TOP1MILLION", len(blocked_by))
-            total_score += top1m_score
-            breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)} - Score Contribution: {top1m_score}")
-        else:
-            breakdown.append("Top1M: Not blocked by Majestic, Tranco, or Cisco")
-    else:
-        breakdown.append("Top1M: No relevant data found.")
-
-    return "\n".join(breakdown), total_score
 
 
 
@@ -2376,6 +2375,35 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
                     if progress_bar:
                         progress_bar.value += 1
+
+                    submission_id, finished = submit_url_to_hybrid_analysis(entry, status_output, progress_bar)
+
+                    if submission_id:
+                        if finished:
+                            # Fetch the report directly since it's already complete
+                            print("Quick-scan analysis is already completed. Fetching the report directly.")
+                            results_url = f"{HYBRID_ANALYSIS_BASE_URL}/quick-scan/{submission_id}"
+                            headers = {
+                                "accept": "application/json",
+                                "api-key": hybridanalysis_api_key
+                            }
+                            response = requests.get(results_url, headers=headers)
+                            if response.status_code == 200:
+                                report_hybrid_analysis_url = response.json()
+                            else:
+                                print(f"Failed to fetch completed quick-scan report. HTTP {response.status_code}: {response.text}")
+                                report_hybrid_analysis_url = None
+                        else:
+                            # Poll for the report if the analysis is still in progress
+                            print("Quick-scan analysis is in progress. Polling for the final report.")
+                            report_hybrid_analysis_url = fetch_hybrid_analysis_report(
+                                submission_id, status_output=status_output, progress_bar=progress_bar
+                            )
+                    else:
+                        report_hybrid_analysis_url = None  # No submission ID, so no report
+                    
+                    if progress_bar:
+                        progress_bar.value += 1
                 
                 
                     url_id = submit_url_for_analysis(entry, status_output, progress_bar)
@@ -2407,6 +2435,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     
                         else:
                             report_urlscan = None
+
                 
                     report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
                     if progress_bar:
@@ -2414,11 +2443,6 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                 
                 
                     report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-
-                    # Hybrid Analysis Submission and Status Check
-                    report_hybrid_analysis_url = submit_url_to_hybrid_analysis(entry, status_output, progress_bar)
                     if progress_bar:
                         progress_bar.value += 1
                     

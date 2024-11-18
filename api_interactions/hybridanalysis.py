@@ -191,47 +191,98 @@ def submit_hybridhash_for_rescan(file_hash, status_output=None, progress_bar=Non
 
 
 def submit_url_to_hybrid_analysis(url, status_output=None, progress_bar=None):
-    print(f"Submitting URL to Hybrid Analysis (quick-scan): {url}")
-    submission_url = f"{HYBRID_ANALYSIS_BASE_URL}/quick-scan/url"
+    """
+    Submits a URL for quick-scan analysis to Hybrid Analysis.
+    """
+    if status_output:
+        with status_output:
+            clear_output(wait=True)
+            display(HTML(f'<b>Submitting {url} for quick-scan...</b>'))
+            display(progress_bar)
+
+    print(f"Submitting {url} for quick-scan.")
+    quick_scan_url = f"{HYBRID_ANALYSIS_BASE_URL}/quick-scan/url"
     headers = {
         "accept": "application/json",
         "api-key": hybridanalysis_api_key,
         "Content-Type": "application/x-www-form-urlencoded"
     }
+    data = {
+        "url": url,
+        "scan_type": "all"  # Specify the scan type
+    }
     
-    data = {"url": url, "scan_type": "all"}
-    response = requests.post(submission_url, headers=headers, data=data)
+    response = requests.post(quick_scan_url, headers=headers, data=data)
 
-    if response.status_code == 200:
-        try:
-            response_json = response.json()
-            #print(f"DEBUG: Received quick-scan report response: {json.dumps(response_json, indent=2)}")
-            # Check if the response contains the report directly
-            if "id" in response_json or "submission_type" in response_json:
-                print("Quick-scan returned a completed report directly.")
-                return response_json  # Return the completed report directly
-            else:
-                print("Error: Expected report fields not found in the response.")
-                return None
-        except json.JSONDecodeError as e:
-            print(f"Failed to parse JSON response: {e}")
-            return None
+    if response.status_code == 200:  # Quick-scan submission successful
+        response_json = response.json()
+        scan_id = response_json.get("id")
+        finished = response_json.get("finished", False)
+        print(f"Quick-scan submitted successfully. Scan ID: {scan_id}, Finished: {finished}")
+        return scan_id, finished
     else:
-        print(f"Failed to submit URL to Hybrid Analysis. Status Code: {response.status_code}")
+        print(f"Failed to submit quick-scan. HTTP {response.status_code}: {response.text}")
+        return None, None
+
+
+def fetch_hybrid_analysis_report(submission_id, status_output=None, progress_bar=None, timeout=600, poll_interval=15):
+    """
+    Polls the /quick-scan/{id} endpoint or fetches the final quick-scan results immediately if completed.
+    """
+    if not submission_id:
+        print("Invalid submission ID. Cannot fetch results.")
         return None
+
+    elapsed_time = 0
+    while elapsed_time < timeout:
+        if status_output:
+            with status_output:
+                clear_output(wait=True)
+                display(HTML(f'<b>Checking results for Submission ID: {submission_id}...</b>'))
+                display(progress_bar)
+
+        print(f"Fetching results for Submission ID: {submission_id}...")
+        results_url = f"{HYBRID_ANALYSIS_BASE_URL}/quick-scan/{submission_id}"
+        headers = {
+            "accept": "application/json",
+            "api-key": hybridanalysis_api_key
+        }
+        response = requests.get(results_url, headers=headers)
+
+        if response.status_code == 200:
+            results_json = response.json()
+            finished = results_json.get("finished", False)
+            if finished:
+                print("Quick-scan analysis completed successfully.")
+                return results_json  # Return the final report immediately
+            else:
+                print("Quick-scan analysis still in progress.")
+        else:
+            print(f"Failed to fetch quick-scan results. HTTP {response.status_code}: {response.text}")
+            return None
+
+        time.sleep(poll_interval)
+        elapsed_time += poll_interval
+
+    print("Timeout reached while waiting for quick-scan analysis to complete.")
+    return None
 
 
 
 def parse_hybrid_analysis_url_report(report):
+    """
+    Parses the Hybrid-Analysis URL report and formats it for readability.
+    """
     if not isinstance(report, dict):
         print(f"Error: Expected report to be a dict, got {type(report)}")
         return "Hybrid-Analysis Report:\nNo data available or analysis failed.\n\n"
 
     # Extract general information
     report_id = report.get("id", "N/A")
-    submission_type = report.get("submission_type", "N/A")
     sha256 = report.get("sha256", "N/A")
     finished = report.get("finished", False)
+    whitelist = report.get("whitelist", [])
+    detailed_reports = report.get("reports", [])
 
     # Parse the "scanners" section
     scanners_info = []
@@ -239,9 +290,9 @@ def parse_hybrid_analysis_url_report(report):
         scanner_info = {
             "name": scanner.get("name", "N/A"),
             "status": scanner.get("status", "N/A"),
-            "progress": scanner.get("progress", "N/A"),
+            "progress": f"{scanner.get('progress', 'N/A')}%",
             "positives": scanner.get("positives", "N/A"),
-            "percent": scanner.get("percent", "N/A")
+            "percent": f"{scanner.get('percent', 'N/A')}%"
         }
         scanners_info.append(scanner_info)
 
@@ -250,11 +301,11 @@ def parse_hybrid_analysis_url_report(report):
     for scanner_key, scanner in report.get("scanners_v2", {}).items():
         if scanner:  # Ensure the scanner data is not None
             scanner_info = {
-                "name": scanner.get("name", "N/A"),
+                "name": scanner.get("name", scanner_key),
                 "status": scanner.get("status", "N/A"),
-                "progress": scanner.get("progress", "N/A"),
-                "percent": scanner.get("percent", "N/A"),
-                "error_message": scanner.get("error_message", None)
+                "progress": f"{scanner.get('progress', 'N/A')}%",
+                "percent": f"{scanner.get('percent', 'N/A')}%",
+                "error_message": scanner.get("error_message", "None")
             }
             scanners_v2_info.append(scanner_info)
 
@@ -262,7 +313,6 @@ def parse_hybrid_analysis_url_report(report):
     report_output = (
         f"Hybrid-Analysis Report:\n"
         f"  - Report ID: {report_id}\n"
-        f"  - Submission Type: {submission_type}\n"
         f"  - SHA256: {sha256}\n"
         f"  - Finished: {'Yes' if finished else 'No'}\n"
         f"  - Scanners:\n"
@@ -273,9 +323,9 @@ def parse_hybrid_analysis_url_report(report):
         report_output += (
             f"    - {scanner_info['name']}:\n"
             f"        - Status: {scanner_info['status']}\n"
-            f"        - Progress: {scanner_info['progress']}%\n"
+            f"        - Progress: {scanner_info['progress']}\n"
             f"        - Positives: {scanner_info['positives']}\n"
-            f"        - Percent: {scanner_info['percent']}%\n"
+            f"        - Percent: {scanner_info['percent']}\n"
         )
 
     # Add formatted information from "scanners_v2"
@@ -284,9 +334,49 @@ def parse_hybrid_analysis_url_report(report):
         report_output += (
             f"    - {scanner_info['name']}:\n"
             f"        - Status: {scanner_info['status']}\n"
-            f"        - Progress: {scanner_info['progress']}%\n"
-            f"        - Percent: {scanner_info['percent']}%\n"
+            f"        - Progress: {scanner_info['progress']}\n"
+            f"        - Percent: {scanner_info['percent']}\n"
             f"        - Error Message: {scanner_info['error_message']}\n"
         )
 
+    # Add whitelist information
+    if whitelist:
+        report_output += "  - Whitelist:\n"
+        for item in whitelist:
+            report_output += f"    - {item}\n"
+    else:
+        report_output += "  - Whitelist: None\n"
+
+    # Add detailed reports information
+    if detailed_reports:
+        report_output += "  - Detailed Reports:\n"
+        for detailed_report in detailed_reports:
+            report_output += f"    - {json.dumps(detailed_report, indent=4)}\n"
+    else:
+        report_output += "  - Detailed Reports: None\n"
+
     return report_output
+
+
+def analyze_url_with_hybrid_analysis(url, status_output=None, progress_bar=None):
+    """
+    Submits a URL for quick-scan analysis, waits for completion if necessary, and fetches the final results.
+    """
+    submission_id, finished = submit_url_to_hybrid_analysis(url, status_output, progress_bar)
+    if not submission_id:
+        print("Submission failed. No submission ID returned.")
+        return None
+
+    if finished:
+        print("Quick-scan analysis is already completed. Fetching results...")
+        report = fetch_hybrid_analysis_report(submission_id, status_output=status_output, progress_bar=progress_bar, timeout=0, poll_interval=0)
+        return report
+
+    # If not finished, poll for completion
+    print("Quick-scan analysis is in progress. Polling for results...")
+    report = fetch_hybrid_analysis_report(submission_id, status_output=status_output, progress_bar=progress_bar)
+    if report:
+        return report
+    else:
+        print("Failed to fetch the quick-scan report.")
+        return None
