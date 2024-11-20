@@ -1,12 +1,164 @@
 import requests
 import json
+import re
 from datetime import datetime
 import time
+from urllib.parse import urlencode
 from IPython.display import clear_output, HTML, display
 from api.api_keys import hybridanalysis_api_key
+from file_operations.file_utils import is_ip, is_domain, is_hash, is_url
 
 # Base URL for Hybrid Analysis
 HYBRID_ANALYSIS_BASE_URL = "https://www.hybrid-analysis.com/api/v2"
+
+def detect_ioc_type(ioc):
+    """
+    Detects the type of IOC (Indicator of Compromise) provided.
+    """
+    if is_ip(ioc):
+        return "ip"
+    elif is_url(ioc):
+        return "url"
+    elif is_hash(ioc):
+        return "hash"
+    elif is_domain(ioc):
+        return "domain"
+    else:
+        return "unknown"
+
+
+def handle_hybrid_analysis_ioc(ioc, status_output=None, progress_bar=None):
+    """
+    Handles IOC analysis using the appropriate Hybrid Analysis API endpoint.
+    """
+    ioc_type = detect_ioc_type(ioc)
+
+    if ioc_type == "url":
+        print(f"Detected URL. Submitting {ioc} for quick-scan.")
+        return analyze_url_with_hybrid_analysis(ioc, status_output, progress_bar)
+
+    elif ioc_type in ["ip", "domain"]:
+        print(f"Detected {ioc_type}. Searching {ioc} using the /search/terms endpoint.")
+        return search_hybrid_analysis_by_term(ioc, status_output, progress_bar)
+
+    elif ioc_type == "hash":
+        print(f"Detected hash. Fetching report for {ioc}.")
+        return get_hybrid_analysis_hash_report(ioc, status_output, progress_bar)
+
+    else:
+        print(f"Unknown IOC type for {ioc}. Unable to process.")
+        return None
+
+
+def search_hybrid_analysis_by_term(search_term, ioc_type, status_output=None, progress_bar=None):
+    """
+    Searches the Hybrid Analysis API for a given term (e.g., IP address, domain, file hash).
+    """
+    if status_output:
+        with status_output:
+            clear_output(wait=True)
+            display(HTML(f'<b>Searching Hybrid Analysis for {search_term}...</b>'))
+            display(progress_bar)
+
+    print(f"Searching Hybrid Analysis for term: {search_term} (Type: {ioc_type})")
+    search_url = f"{HYBRID_ANALYSIS_BASE_URL}/search/terms"
+    headers = {
+        "accept": "application/json",
+        "api-key": hybridanalysis_api_key,
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    # Determine the correct search term key and format the data
+    search_key = "host" if ioc_type == "ip" else "domain"
+    data = f"{search_key}={search_term}"  # Format the data as a URL-encoded string
+
+    print(f"DEBUG: Request Data: {data}")
+    
+    response = requests.post(search_url, headers=headers, data=data)
+
+    try:
+        response_json = response.json()  # Attempt to parse JSON from response
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Failed to parse JSON response: {e}")
+        print(f"Response Text: {response.text}")  # Debugging
+        return None
+
+    if response.status_code == 200:
+        print(f"Search completed successfully for term: {search_term}")
+        #print(f"DEBUG: Raw JSON Response: {response.json()}")
+        return response_json
+    else:
+        print(f"Search failed for term: {search_term}. HTTP {response.status_code}: {response.text}")
+        return None
+
+def parse_hybrid_analysis_ip_response(response_json, debug=False):
+    """
+    Parses the Hybrid Analysis response for IPs and extracts relevant details into plaintext.
+    """
+    if not isinstance(response_json, dict):
+        raise ValueError(f"Expected dictionary with 'result' key, got {type(response_json)}")
+
+    results = response_json.get("result", [])
+    if debug:
+        print(f"DEBUG: Number of results found: {len(results)}")
+
+    report_lines = []
+    for idx, result in enumerate(results, start=1):
+        report_lines.append(f"   - Result {idx}:")
+        report_lines.append(f"    - Verdict: {result.get('verdict', 'N/A')}")
+        report_lines.append(f"    - AV Detect: {result.get('av_detect', 'N/A')}")
+        report_lines.append(f"    - Threat Score: {result.get('threat_score', 'N/A')}")
+        report_lines.append(f"    - VX Family: {result.get('vx_family', 'N/A')}")
+        report_lines.append(f"    - SHA256: {result.get('sha256', 'N/A')}")
+        report_lines.append(f"    - Job ID: {result.get('job_id', 'N/A')}")
+        report_lines.append(f"    - Submit Name: {result.get('submit_name', 'N/A')}")
+        report_lines.append(f"    - Environment: {result.get('environment_description', 'N/A')}")
+        report_lines.append(f"    - Analysis Start Time: {result.get('analysis_start_time', 'N/A')}")
+        report_lines.append(f"    - Size: {result.get('size', 'N/A')} bytes")
+        report_lines.append(f"    - Type: {result.get('type_short', 'N/A')}")
+        #report_lines.append("")  # Blank line for readability
+
+    parsed_report = "\n".join(report_lines)
+    if debug:
+        print(f"DEBUG: Parsed Report for IP:\n{parsed_report}")
+    return parsed_report
+
+
+def generate_hybrid_analysis_domain_report(response_json):
+    """
+    Generate a structured report based on the Hybrid-Analysis API JSON response for domain searches.
+    """
+    report = []
+
+    if not response_json or "result" not in response_json:
+        report.append("Hybrid-Analysis: No data available for the domain.")
+        return "\n".join(report)
+
+    results = response_json.get("result", [])
+    if not results:
+        report.append("Hybrid-Analysis: No results found for the domain.")
+        return "\n".join(report)
+
+    # report.append("Hybrid-Analysis Domain Report:")
+    # report.append("=" * 50)
+
+    for idx, result in enumerate(results, start=1):
+        report.append(f"  - Entry {idx}:")
+        report.append(f"   - Verdict: {result.get('verdict', 'N/A')}")
+        report.append(f"   - AV Detect: {result.get('av_detect', 'N/A')}")
+        report.append(f"  - Threat Score: {result.get('threat_score', 'N/A')}")
+        report.append(f"  - VX Family: {result.get('vx_family', 'N/A')}")
+        report.append(f"  - Job ID: {result.get('job_id', 'N/A')}")
+        report.append(f"  - SHA256: {result.get('sha256', 'N/A')}")
+        report.append(f"  - Environment ID: {result.get('environment_id', 'N/A')}")
+        report.append(f"  - Analysis Start Time: {result.get('analysis_start_time', 'N/A')}")
+        report.append(f"  - Submit Name: {result.get('submit_name', 'N/A')}")
+        report.append(f"  - Environment Description: {result.get('environment_description', 'N/A')}")
+        report.append(f"  - Size: {result.get('size', 'N/A')}")
+        report.append(f"  - Type: {result.get('type', 'N/A')}")
+        report.append(f"  - Type Short: {result.get('type_short', 'N/A')}")
+        # report.append("-" * 50)
+
+    return "\n".join(report)
 
 
 def process_hybrid_analysis_report(json_response):
@@ -20,9 +172,11 @@ def process_hybrid_analysis_report(json_response):
     print_hybrid_analysis_report(longest_report)
 
 def parse_hybrid_analysis_report(report):
-    if isinstance(report, list) and report:  # Handle list report
+    if isinstance(report, list) and report:  # Handle non-empty list
         primary_report = report[0]  # Use the first report if it's a list
         return extract_report_data(primary_report)
+    elif isinstance(report, list) and not report:  # Handle empty list
+        return None  # Return None or a suitable default value
     elif isinstance(report, dict):  # Handle single dict report
         return extract_report_data(report)
     else:
@@ -311,7 +465,7 @@ def parse_hybrid_analysis_url_report(report):
 
     # Format the report output for readability
     report_output = (
-        f"Hybrid-Analysis Report:\n"
+        # f"Hybrid-Analysis Report:\n"
         f"  - Report ID: {report_id}\n"
         f"  - SHA256: {sha256}\n"
         f"  - Finished: {'Yes' if finished else 'No'}\n"

@@ -54,7 +54,7 @@ from api.api_keys import censys_api_key, censys_secret, metadefender_api_key
 from api_interactions.borealis import request_borealis, format_borealis_report
 from api_interactions.binaryedge import get_binaryedge_report, search_binaryedge_by_port, search_binaryedge_product, search_binaryedge_product_port_country
 from api_interactions.metadefender import analyze_with_metadefender, process_metadefender_ip_report, process_metadefender_url_report, process_metadefender_hash_report
-from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report, submit_url_to_hybrid_analysis, parse_hybrid_analysis_url_report, fetch_hybrid_analysis_report, analyze_url_with_hybrid_analysis, HYBRID_ANALYSIS_BASE_URL
+from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report, submit_url_to_hybrid_analysis, parse_hybrid_analysis_url_report, fetch_hybrid_analysis_report, analyze_url_with_hybrid_analysis, HYBRID_ANALYSIS_BASE_URL, search_hybrid_analysis_by_term, handle_hybrid_analysis_ioc, parse_hybrid_analysis_ip_response, generate_hybrid_analysis_domain_report
 from api.api_keys import hybridanalysis_api_key
 from api_interactions.malshare import get_malshare_hash_report
 
@@ -590,7 +590,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     vendor_weights = {
         "VirusTotal": 4,
         "AbuseIPDB": 1,
-        "AlienVault": 0.5,
+        "AlienVault": 1,
         "GreyNoise": 1,
         "IPQualityScore": 1,
         "MalwareBazaar": 1,
@@ -732,8 +732,10 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                 # AbuseIPDB parsing
                 if 'AbuseIPDB' in reports:
                     abuseipdb_report = reports['AbuseIPDB']
+                    last_seen = abuseipdb_report.get('lastSeen', 'N/A')
+                    is_tor = abuseipdb_report.get('isTor', 'N/A')
+                    total_reports = abuseipdb_report.get('totalReports', 'N/A')
                     confidence_score = int(abuseipdb_report.get('abuseConfidenceScore', 0))
-                    last_seen = abuseipdb_report.get('lastSeen', None)
                     if last_seen:
                         try:
                             last_analysis_date = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
@@ -741,7 +743,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                             last_analysis_date = None
                     abuse_weighted_score = calculate_vendor_score("AbuseIPDB", confidence_score, last_analysis_date)
                     total_score += abuse_weighted_score
-                    score_breakdown.append(f"AbuseIPDB Score (Weighted): {abuse_weighted_score}")
+                    score_breakdown.append(f"AbuseIPDB:\n  Reports: {total_reports}\n  Confidence Score: {confidence_score}\n  Is Tor Node: {is_tor}\n  Last Seen: {last_seen}\n  Score (Weighted): {abuse_weighted_score}")
     
                 # IPQualityScore parsing
                 if 'IPQualityScore' in reports:
@@ -915,6 +917,56 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                 # Append Borealis info if present
                 if borealis_breakdown:
                     score_breakdown.append(f"Borealis Report:\n{borealis_breakdown}")
+
+                if 'Hybrid-Analysis' in reports:
+                    ha_report = reports.get("Hybrid-Analysis", {})
+                    if isinstance(ha_report, dict) and 'result' in ha_report:
+                        results = ha_report.get('result', [])
+                        hybrid_analysis_score = 0
+                        
+                        # Iterate through the results to compute the score
+                        for result in results:
+                            verdict = result.get('verdict', 'N/A')
+                            threat_score = result.get('threat_score', 0)
+                            vx_family = result.get('vx_family', 'N/A')
+                            environment = result.get('environment_description', 'N/A')
+                            submit_name = result.get('submit_name', 'N/A')
+                
+                            # Calculate score contribution based on verdict and threat score
+                            if verdict == 'malicious':
+                                hybrid_analysis_score += 10  # High weight for malicious verdict
+                            elif verdict == 'suspicious':
+                                hybrid_analysis_score += 5   # Medium weight for suspicious verdict
+                            
+                            # Add the threat score directly
+                            if isinstance(threat_score, int):
+                                hybrid_analysis_score += threat_score * 0.1  # Scale threat score
+                            
+                            # Debug: Log the parsed details
+                            print(f"DEBUG: Hybrid-Analysis Result: Verdict={verdict}, Threat Score={threat_score}, VX Family={vx_family}, Submit Name={submit_name}, Environment={environment}")
+                        
+                        # Calculate weighted score for Hybrid Analysis
+                        hybrid_analysis_weighted_score = calculate_vendor_score("Hybrid-Analysis", hybrid_analysis_score)
+                        total_score += hybrid_analysis_weighted_score
+                        malicious_count += len(results)  # Count the number of results as malicious entries
+                
+                        # Append details to the score breakdown
+                        score_breakdown.append(f"Hybrid-Analysis:\n  Results Processed={len(results)}\n  Score Contribution (Weighted): {hybrid_analysis_weighted_score}")
+                        
+                        for idx, result in enumerate(results, start=1):
+                            verdict = result.get('verdict', 'N/A')
+                            threat_score = result.get('threat_score', 'N/A')
+                            vx_family = result.get('vx_family', 'N/A')
+                            sha256 = result.get('sha256', 'N/A')
+                            environment = result.get('environment_description', 'N/A')
+                            submit_name = result.get('submit_name', 'N/A')
+                            score_breakdown.append(
+                                f"  Result {idx}:\n    Verdict: {verdict}\n    Threat Score: {threat_score}\n"
+                                f"    VX Family: {vx_family}\n    SHA256: {sha256}\n"
+                                f"    Submit Name: {submit_name}\n    Environment: {environment}"
+                            )
+                    else:
+                        score_breakdown.append("HybridAnalysis: No data available")
     
                 # # Stonewall parsing (approval for blocking)
                 # if 'STONEWALL' in borealis_report:
@@ -1963,7 +2015,7 @@ def extract_censys_data_analysis(censys_report):
 
 
 
-def analysis(selected_category, output_file_path=None, progress_bar=None, status_output=None, selected_country=None, port=None):
+def analysis(selected_category, output_file_path=None, progress_bar=None, status_output=None, selected_country=None, port=None, debug=False):
     print(f"DEBUG: analysis function started with selected_category = {selected_category}")
     print(f"DEBUG: selected_country passed to analysis = {selected_country}")
     individual_combined_reports = {}
@@ -2000,9 +2052,9 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
     # Calculate total API calls based on the number of IOCs in each category
     total_api_calls = (
-        len(selected_category['ips']) * 10  # 10 API calls per IP
+        len(selected_category['ips']) * 13  # 10 API calls per IP
         + len(selected_category['urls']) * 12  # 9 API calls per URL
-        + len(selected_category['domains']) * 9  # 9 API calls per domain (if treated separately from URLs)
+        + len(selected_category['domains']) * 12  # 9 API calls per domain (if treated separately from URLs)
         + len(selected_category['hashes']) * 5  # 4 API calls per hash
         + len(selected_category['cves']) * 3
         + len(selected_category['orgs']) * 2
@@ -2049,6 +2101,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_censys = None
                     report_binaryedge_ip = None
                     report_metadefender_ip = None
+                    report_hybrid_analysis_ip = None
 
                     
                     report_vt_ip = get_ip_report(entry, status_output, progress_bar)
@@ -2092,6 +2145,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                 
                 
                     report_metadefender_ip = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+
+                    report_hybrid_analysis_ip = search_hybrid_analysis_by_term(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
                     if progress_bar:
                         progress_bar.value += 1
                 
@@ -2165,6 +2222,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             "AlienVault": report_alienvault,
                             "BinaryEdge": report_binaryedge_ip,
                             "MetaDefender": report_metadefender_ip,
+                            "Hybrid-Analysis": report_hybrid_analysis_ip,
                         },
                         borealis_report,
                         ioc_type="ip"
@@ -2341,6 +2399,15 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += f"{sanitize_and_defang(report_metadefender_ip)}\n\n"
                     else:
                         combined_report += "Metadefender Report:\n  - No relevant data found.\n\n"
+
+                    # Hybrid-Analysis Report
+                    if report_hybrid_analysis_ip:
+                        hybrid_analysis_report_str = parse_hybrid_analysis_ip_response(report_hybrid_analysis_ip, debug=debug)
+                        if debug:
+                            print(f"DEBUG: Parsed Hybrid-Analysis Report (IP):\n{hybrid_analysis_report_str}")
+                        combined_report += f"Hybrid-Analysis Report (IP):\n{hybrid_analysis_report_str}\n\n"
+                    else:
+                        combined_report += "Hybrid-Analysis Report (IP): No results found.\n\n"
                     
 
                     # Format and append the Borealis report to the combined report
@@ -2376,31 +2443,39 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     if progress_bar:
                         progress_bar.value += 1
 
-                    submission_id, finished = submit_url_to_hybrid_analysis(entry, status_output, progress_bar)
-
-                    if submission_id:
-                        if finished:
-                            # Fetch the report directly since it's already complete
-                            print("Quick-scan analysis is already completed. Fetching the report directly.")
-                            results_url = f"{HYBRID_ANALYSIS_BASE_URL}/quick-scan/{submission_id}"
-                            headers = {
-                                "accept": "application/json",
-                                "api-key": hybridanalysis_api_key
-                            }
-                            response = requests.get(results_url, headers=headers)
-                            if response.status_code == 200:
-                                report_hybrid_analysis_url = response.json()
-                            else:
-                                print(f"Failed to fetch completed quick-scan report. HTTP {response.status_code}: {response.text}")
-                                report_hybrid_analysis_url = None
-                        else:
-                            # Poll for the report if the analysis is still in progress
-                            print("Quick-scan analysis is in progress. Polling for the final report.")
-                            report_hybrid_analysis_url = fetch_hybrid_analysis_report(
-                                submission_id, status_output=status_output, progress_bar=progress_bar
-                            )
+                    is_domain_ioc = is_domain(entry)
+                    report_hybrid_analysis = None
+                    
+                    if is_domain_ioc:
+                        print(f"Detected domain: {entry}. Using Hybrid-Analysis /search/terms endpoint.")
+                        report_hybrid_analysis = search_hybrid_analysis_by_term(entry, status_output=status_output, progress_bar=progress_bar)
                     else:
-                        report_hybrid_analysis_url = None  # No submission ID, so no report
+                        print(f"Detected URL: {entry}. Using Hybrid-Analysis /quick-scan/url endpoint.")
+                        submission_id, finished = submit_url_to_hybrid_analysis(entry, status_output=status_output, progress_bar=progress_bar)
+                    
+                        if submission_id:
+                            if finished:
+                                # Fetch the report directly since it's already complete
+                                print("Quick-scan analysis is already completed. Fetching the report directly.")
+                                results_url = f"{HYBRID_ANALYSIS_BASE_URL}/quick-scan/{submission_id}"
+                                headers = {
+                                    "accept": "application/json",
+                                    "api-key": hybridanalysis_api_key
+                                }
+                                response = requests.get(results_url, headers=headers)
+                                if response.status_code == 200:
+                                    report_hybrid_analysis = response.json()
+                                else:
+                                    print(f"Failed to fetch completed quick-scan report. HTTP {response.status_code}: {response.text}")
+                                    report_hybrid_analysis = None
+                            else:
+                                # Poll for the report if the analysis is still in progress
+                                print("Quick-scan analysis is in progress. Polling for the final report.")
+                                report_hybrid_analysis = fetch_hybrid_analysis_report(
+                                    submission_id, status_output=status_output, progress_bar=progress_bar
+                                )
+                        else:
+                            report_hybrid_analysis = None  # No submission ID, so no report
                     
                     if progress_bar:
                         progress_bar.value += 1
@@ -2531,7 +2606,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             "IPQualityScore": report_ipqualityscore,
                             "BinaryEdge": report_binaryedge_url,
                             "MetaDefender": report_metadefender_url,
-                            "Hybrid-Analysis": report_hybrid_analysis_url,
+                            "Hybrid-Analysis": report_hybrid_analysis,
                         },
                         borealis_report,
                         ioc_type = "url" if ioc_type in ["url", "domain"] else ioc_type
@@ -2658,11 +2733,16 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += "Metadefender Report:\n  - No relevant data found.\n\n"
 
                     # Hybrid-Analysis Report
-                    if report_hybrid_analysis_url:
-                        hybrid_analysis_report_str = parse_hybrid_analysis_url_report(report_hybrid_analysis_url)
-                        combined_report += f"{hybrid_analysis_report_str}\n\n"
+                    if report_hybrid_analysis:
+                        if is_domain_ioc:
+                            combined_report += f"Hybrid-Analysis Report (Domain):\n{generate_hybrid_analysis_domain_report(report_hybrid_analysis)}\n\n"
+                        else:
+                            combined_report += f"Hybrid-Analysis Report (URL):\n{parse_hybrid_analysis_url_report(report_hybrid_analysis)}\n\n"
                     else:
-                        combined_report += "Hybrid-Analysis Report:\nNo data available or analysis still in progress.\n\n"
+                        if is_domain_ioc:
+                            combined_report += "Hybrid-Analysis Report (Domain):\nNo data available.\n\n"
+                        else:
+                            combined_report += "Hybrid-Analysis Report (URL):\nNo data available or analysis still in progress.\n\n"
                 
                     # Borealis Report
                     if borealis_report:
@@ -2987,13 +3067,13 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
 
                     # Hybrid Analysis report
-                    parsed_report = parse_hybrid_analysis_report(report_hybrid_analysis)
-                    if parsed_report:
-                        # print("DEBUG: Parsed Hybrid Analysis Report Data:", parsed_report)
-                        combined_report += print_hybrid_analysis_report(parsed_report)
+                    if isinstance(report_hybrid_analysis, list) and not report_hybrid_analysis:
+                        combined_report += "Hybrid Analysis Report:\nNo relevant data found.\n\n"
                     else:
-                        # print("DEBUG: Failed to parse Hybrid Analysis Report")
-                        combined_report += "Hybrid-Analysis Report: N/A\n\n"
+                        parsed_report = parse_hybrid_analysis_report(report_hybrid_analysis)
+                        if parsed_report:
+                            combined_report += print_hybrid_analysis_report(parsed_report)
+
                 
 
 
