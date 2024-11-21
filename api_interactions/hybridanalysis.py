@@ -35,11 +35,11 @@ def handle_hybrid_analysis_ioc(ioc, status_output=None, progress_bar=None):
 
     if ioc_type == "url":
         print(f"Detected URL. Submitting {ioc} for quick-scan.")
-        return analyze_url_with_hybrid_analysis(ioc, status_output, progress_bar)
+        return analyze_url_with_hybrid_analysis(ioc, ioc_type, status_output, progress_bar)
 
     elif ioc_type in ["ip", "domain"]:
         print(f"Detected {ioc_type}. Searching {ioc} using the /search/terms endpoint.")
-        return search_hybrid_analysis_by_term(ioc, status_output, progress_bar)
+        return search_hybrid_analysis_by_term(ioc, ioc_type, status_output, progress_bar)
 
     elif ioc_type == "hash":
         print(f"Detected hash. Fetching report for {ioc}.")
@@ -130,12 +130,12 @@ def generate_hybrid_analysis_domain_report(response_json):
     report = []
 
     if not response_json or "result" not in response_json:
-        report.append("Hybrid-Analysis: No data available for the domain.")
+        report.append("No data available for the domain.")
         return "\n".join(report)
 
     results = response_json.get("result", [])
     if not results:
-        report.append("Hybrid-Analysis: No results found for the domain.")
+        report.append("No results found for the domain.")
         return "\n".join(report)
 
     # report.append("Hybrid-Analysis Domain Report:")

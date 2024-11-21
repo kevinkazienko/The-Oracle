@@ -475,7 +475,8 @@ def parse_vendor_intel(vendor_intel):
 trusted_asn_list = {
     "Google": 15169,
     "Cloudflare": 13335,
-    "Amazon": 16509,
+    "Amazon": 16509, 
+    "Amazon": 14618,
     "Microsoft": 8075,
     #"Akamai": 20940,
     #"Shodan": 20473,  # Shodan is trusted but does not count towards malicious score.
@@ -490,9 +491,13 @@ def check_trusted_provider(asn, organization, isp):
 
     trusted_providers = {
         "13335": "Cloudflare",
+        "AS13335 cloudflare": "Cloudflare",
         "15169": "Google",
         "8075": "Microsoft",
-        "16509": "Amazon" 
+        "16509": "Amazon",
+        "AS14618": "Amazon",
+        "14618": "Amazon",
+        "AS14618 amazon.com inc.": "Amazon",
         # Add other ASNs or organizations as needed
     }
 
@@ -518,7 +523,7 @@ def check_trusted_provider(asn, organization, isp):
 
     # List of trusted providers with variations
     trusted_variations = {
-        "Amazon": ["Amazon", "amazonaws.com", "amazon.com", "amazon"],
+        "Amazon": ["Amazon", "amazonaws.com", "amazon.com", "amazon", "AMAZON-AES", "Amazon.com", "Amazon Data Services NoVa"],
         "Google": ["Google", "GOOGLE", "google.com", "google.ca", "GOOGLE-CLOUD-PLATFORM", "google", "AS15169 google llc"],
         "Cloudflare": ["Cloudflare", "CLOUDFLARENET", "AS13335 cloudflare", "cloudflare"],
         "Microsoft": ["Microsoft", "MICROSOFT-CORP"],
@@ -1705,11 +1710,11 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
             # Determine verdict based on raw total_score thresholds
             if total_score == 0:
                 verdict = "Not Malicious"
-            elif 1 <= total_score <= 15:
+            elif 1 <= total_score <= 40:
                 verdict = "Not Malicious"
-            elif 16 <= total_score <= 30:
+            elif 41 <= total_score <= 90:
                 verdict = "Suspicious"
-            elif 31 <= total_score <= 50:
+            elif 91 <= total_score <= 150:
                 verdict = "Probably Malicious"
             else:
                 verdict = "Malicious"
@@ -2448,10 +2453,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     
                     if is_domain_ioc:
                         print(f"Detected domain: {entry}. Using Hybrid-Analysis /search/terms endpoint.")
-                        report_hybrid_analysis = search_hybrid_analysis_by_term(entry, status_output=status_output, progress_bar=progress_bar)
+                        report_hybrid_analysis = search_hybrid_analysis_by_term(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
                     else:
                         print(f"Detected URL: {entry}. Using Hybrid-Analysis /quick-scan/url endpoint.")
-                        submission_id, finished = submit_url_to_hybrid_analysis(entry, status_output=status_output, progress_bar=progress_bar)
+                        submission_id, finished = submit_url_to_hybrid_analysis(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
                     
                         if submission_id:
                             if finished:
