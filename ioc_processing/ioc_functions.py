@@ -57,6 +57,7 @@ from api_interactions.metadefender import analyze_with_metadefender, process_met
 from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report, submit_url_to_hybrid_analysis, parse_hybrid_analysis_url_report, fetch_hybrid_analysis_report, analyze_url_with_hybrid_analysis, HYBRID_ANALYSIS_BASE_URL, search_hybrid_analysis_by_term, handle_hybrid_analysis_ioc, parse_hybrid_analysis_ip_response, generate_hybrid_analysis_domain_report
 from api.api_keys import hybridanalysis_api_key
 from api_interactions.malshare import get_malshare_hash_report
+# from api_interactions.assemblyline import query_safelist, generate_hash
 
 
 # Configure logging to file
@@ -478,7 +479,8 @@ trusted_asn_list = {
     "Amazon": 16509, 
     "Amazon": 14618,
     "Microsoft": 8075,
-    #"Akamai": 20940,
+    "Akamai": 21342,
+    "Akamai": 20940,
     #"Shodan": 20473,  # Shodan is trusted but does not count towards malicious score.
 }
 
@@ -498,6 +500,9 @@ def check_trusted_provider(asn, organization, isp):
         "AS14618": "Amazon",
         "14618": "Amazon",
         "AS14618 amazon.com inc.": "Amazon",
+        "AS21342": "Akamai Technologies, Inc.",
+        "AS20940": "Akamai Technologies, Inc.",
+        "AS21342 (Akamai International B.V.)": "Akamai Technologies, Inc.",
         # Add other ASNs or organizations as needed
     }
 
@@ -527,6 +532,7 @@ def check_trusted_provider(asn, organization, isp):
         "Google": ["Google", "GOOGLE", "google.com", "google.ca", "GOOGLE-CLOUD-PLATFORM", "google", "AS15169 google llc"],
         "Cloudflare": ["Cloudflare", "CLOUDFLARENET", "AS13335 cloudflare", "cloudflare"],
         "Microsoft": ["Microsoft", "MICROSOFT-CORP"],
+        "Akamai Technologies, Inc.": ["akamai", "akamaiedge", "AS21342 (Akamai International B.V.)"],
         # Add other trusted providers as needed
     }
 
@@ -542,6 +548,8 @@ def check_trusted_provider(asn, organization, isp):
         return "Google"
     elif "microsoft" in organization or "microsoft" in isp:
         return "Microsoft"
+    elif "Akamai Technologies, Inc." in organization or "Akamai International B.V." in organization or "Akamai" in isp:
+        return "Akamai Technologies, Inc."
 
     # Check each provider and its variations
     for provider, variations in trusted_variations.items():
@@ -948,7 +956,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                                 hybrid_analysis_score += threat_score * 0.1  # Scale threat score
                             
                             # Debug: Log the parsed details
-                            print(f"DEBUG: Hybrid-Analysis Result: Verdict={verdict}, Threat Score={threat_score}, VX Family={vx_family}, Submit Name={submit_name}, Environment={environment}")
+                            #print(f"DEBUG: Hybrid-Analysis Result: Verdict={verdict}, Threat Score={threat_score}, VX Family={vx_family}, Submit Name={submit_name}, Environment={environment}")
                         
                         # Calculate weighted score for Hybrid Analysis
                         hybrid_analysis_weighted_score = calculate_vendor_score("Hybrid-Analysis", hybrid_analysis_score)

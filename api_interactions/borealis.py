@@ -5,6 +5,7 @@ import argparse
 import re
 #from defang import defang
 from pprint import pprint as pp
+from api.api_keys import borealis_api_key
 from file_operations.file_utils import (
     is_ip, 
     is_url, 
@@ -17,8 +18,8 @@ from IPython.display import clear_output, HTML, display
 
 # Set the Borealis host
 global BOREALIS_HOST
-BOREALIS_HOST = "https://borealis.ino.u.azure.chimera.cyber.gc.ca"
-
+#BOREALIS_HOST = "https://borealis.ino.u.azure.chimera.cyber.gc.ca"
+BOREALIS_HOST = "https://ingestion.collaboration.cyber.gc.ca/borealis"
 
 # Borealis function
 def request_borealis(request, ioc_type, modules=None, print_response=True, print_geolocation=True, status_output=None, progress_bar=None):
@@ -41,8 +42,21 @@ def request_borealis(request, ioc_type, modules=None, print_response=True, print
     # Debugging: Show which modules are being used
     print(f"DEBUG: Selected modules for {ioc_type} = {selected_modules}")
 
+    # Ensure subscription_key is provided
+    if not borealis_api_key:
+        print("ERROR: Subscription key is missing. Cannot proceed with the API request.")
+        return None
+
+    # Define the headers for the request
+    headers = {
+        'Ocp-Apim-Subscription-Key': borealis_api_key
+    }
+
     try:
-        response = requests.get(f"{BOREALIS_HOST}/process/{request}?modules={selected_modules}&ioc_type={ioc_type}")
+        response = requests.get(
+            f"{BOREALIS_HOST}/process/{request}?modules={selected_modules}&ioc_type={ioc_type}",
+            headers=headers  # Include the headers
+        )
 
         if response.status_code == 503:
             print(f"ERROR: Borealis server returned 503 Service Unavailable. Skipping Borealis report for {request}.")
