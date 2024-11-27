@@ -145,17 +145,17 @@ def generate_hybrid_analysis_domain_report(response_json):
         report.append(f"  - Entry {idx}:")
         report.append(f"   - Verdict: {result.get('verdict', 'N/A')}")
         report.append(f"   - AV Detect: {result.get('av_detect', 'N/A')}")
-        report.append(f"  - Threat Score: {result.get('threat_score', 'N/A')}")
-        report.append(f"  - VX Family: {result.get('vx_family', 'N/A')}")
-        report.append(f"  - Job ID: {result.get('job_id', 'N/A')}")
-        report.append(f"  - SHA256: {result.get('sha256', 'N/A')}")
-        report.append(f"  - Environment ID: {result.get('environment_id', 'N/A')}")
-        report.append(f"  - Analysis Start Time: {result.get('analysis_start_time', 'N/A')}")
-        report.append(f"  - Submit Name: {result.get('submit_name', 'N/A')}")
-        report.append(f"  - Environment Description: {result.get('environment_description', 'N/A')}")
-        report.append(f"  - Size: {result.get('size', 'N/A')}")
-        report.append(f"  - Type: {result.get('type', 'N/A')}")
-        report.append(f"  - Type Short: {result.get('type_short', 'N/A')}")
+        report.append(f"   - Threat Score: {result.get('threat_score', 'N/A')}")
+        report.append(f"   - VX Family: {result.get('vx_family', 'N/A')}")
+        report.append(f"   - Job ID: {result.get('job_id', 'N/A')}")
+        report.append(f"   - SHA256: {result.get('sha256', 'N/A')}")
+        report.append(f"   - Environment ID: {result.get('environment_id', 'N/A')}")
+        report.append(f"   - Analysis Start Time: {result.get('analysis_start_time', 'N/A')}")
+        report.append(f"   - Submit Name: {result.get('submit_name', 'N/A')}")
+        report.append(f"   - Environment Description: {result.get('environment_description', 'N/A')}")
+        report.append(f"   - Size: {result.get('size', 'N/A')}")
+        report.append(f"   - Type: {result.get('type', 'N/A')}")
+        report.append(f"   - Type Short: {result.get('type_short', 'N/A')}")
         # report.append("-" * 50)
 
     return "\n".join(report)
@@ -344,7 +344,7 @@ def submit_hybridhash_for_rescan(file_hash, status_output=None, progress_bar=Non
         return None
 
 
-def submit_url_to_hybrid_analysis(url, status_output=None, progress_bar=None):
+def submit_url_to_hybrid_analysis(url, ioc_type, status_output=None, progress_bar=None):
     """
     Submits a URL for quick-scan analysis to Hybrid Analysis.
     """
