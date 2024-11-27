@@ -481,6 +481,7 @@ trusted_asn_list = {
     "Microsoft": 8075,
     "Akamai": 21342,
     "Akamai": 20940,
+    "Bell": 577
     #"Shodan": 20473,  # Shodan is trusted but does not count towards malicious score.
 }
 
@@ -500,6 +501,7 @@ def check_trusted_provider(asn, organization, isp):
         "AS14618": "Amazon",
         "14618": "Amazon",
         "AS14618 amazon.com inc.": "Amazon",
+        "AS577": "Bell",
         # "AS21342": "Akamai Technologies, Inc.",
         # "AS20940": "Akamai Technologies, Inc.",
         # "AS21342 (Akamai International B.V.)": "Akamai Technologies, Inc.",
@@ -532,6 +534,7 @@ def check_trusted_provider(asn, organization, isp):
         "Google": ["Google", "GOOGLE", "google.com", "google.ca", "GOOGLE-CLOUD-PLATFORM", "google", "AS15169 google llc"],
         "Cloudflare": ["Cloudflare", "CLOUDFLARENET", "AS13335 cloudflare", "cloudflare"],
         "Microsoft": ["Microsoft", "MICROSOFT-CORP"],
+        "Bell": ["Bell Canada", "BACOM", "bell canada", "AS577 bell canada"]
         # "Akamai Technologies, Inc.": ["akamai", "akamaiedge", "AS21342 (Akamai International B.V.)"],
         # Add other trusted providers as needed
     }
@@ -587,6 +590,9 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     last_analysis_date = None
     # Define the threshold at the top of the script or within the scoring function
     high_malicious_count_threshold = 3
+    if not reports or not isinstance(reports, dict):
+        # Default fallback values
+        return 0, {}, "Not Malicious"
 
 
     # # Debugging to check Borealis report status
@@ -1718,11 +1724,11 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
             # Determine verdict based on raw total_score thresholds
             if total_score == 0:
                 verdict = "Not Malicious"
-            elif 1 <= total_score <= 40:
+            elif 1 <= total_score <= 50:
                 verdict = "Not Malicious"
-            elif 41 <= total_score <= 90:
+            elif 51 <= total_score <= 100:
                 verdict = "Suspicious"
-            elif 91 <= total_score <= 150:
+            elif 100 <= total_score <= 150:
                 verdict = "Probably Malicious"
             else:
                 verdict = "Malicious"
@@ -3530,19 +3536,22 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         total_score = 0
                         breakdown_str = ""
                         verdict = "Not Malicious"  # Default verdict in case there's no valid result
-                    
-                        # Calculate verdict and score breakdown
-                        total_score, score_breakdown, verdict = calculate_total_malicious_score(
-                            {
-                                "Shodan": report_shodan_port,
-                                "Censys": report_censys_port,
-                                # "BinaryEdge": report_binaryedge_port,
-                                
-                            },
-                            None,  # Borealis is not used for ports, so pass None
-                            ioc_type="port"
-                        )
-                        #combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+
+                        try:
+                            # Calculate verdict and score breakdown
+                            total_score, score_breakdown, verdict = calculate_total_malicious_score(
+                                {
+                                    "Shodan": report_shodan_port,
+                                    "Censys": report_censys_port,
+                                    "BinaryEdge": report_binaryedge_port,
+                                    
+                                },
+                                None,  # Borealis is not used for ports, so pass None
+                                ioc_type="port"
+                            )
+                            #combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
+                        except TypeError:
+                            total_score, score_breakdown, verdict = 0, {}, "Not Malicious"
     
                         # Shodan Report
                         if report_shodan_port and isinstance(report_shodan_port.get('matches', []), list):
