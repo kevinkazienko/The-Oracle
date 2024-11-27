@@ -123,6 +123,7 @@ Ensure you have the necessary API keys set up in the script.
 
 - [X] Integrate additional cybersecurity-related APIs to provide more comprehensive data analysis. 
 - [X] Searching for reliable Vendors
+- [ ] Integrate AssemblyLine for hash, domain/url searches and safelist checks for domains (help needed)
 - [ ] Add support for different types of data, like threat intelligence feeds, DNS query information, and SSL certificate details.
 - [ ] Optimize performance to handle large volumes of IOCs with minimal latency.
 - [ ] MISP integration.
