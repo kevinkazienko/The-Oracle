@@ -31,14 +31,26 @@ from file_operations.file_utils import (
 from api_interactions.virustotal import (
     get_ip_report,
     submit_url_for_analysis,
-    get_url_report,
+    get_virustotal_url_report,
     get_hash_report,
-    get_domain_report,
+    get_virustotal_domain_report,
     needs_rescan,
     submit_ip_for_rescan,
     submit_url_for_rescan,
     submit_domain_for_rescan,
-    submit_hash_for_rescan
+    submit_hash_for_rescan,
+    get_ip_communicating_files,
+    get_ip_passive_dns,
+    get_domain_passive_dns,
+    get_domain_communicating_files,
+    get_file_contacted_ips,
+    get_file_contacted_domains,
+    get_url_communicating_files,
+    parse_virustotal_url_report,
+    parse_virustotal_domain_report,
+    handle_virustotal_ioc,
+    detect_ioc_type
+    
 )
 from api_interactions.shodan import get_shodan_report, search_shodan_cve_country, search_shodan_product_country, search_shodan_org, search_shodan_by_port, search_shodan_product_in_country, search_shodan_product_port_country
 from api_interactions.alienvault import get_alienvault_report
@@ -2073,7 +2085,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
     total_api_calls = (
         len(selected_category['ips']) * 13  # 10 API calls per IP
         + len(selected_category['urls']) * 12  # 9 API calls per URL
-        + len(selected_category['domains']) * 12  # 9 API calls per domain (if treated separately from URLs)
+        + len(selected_category['domains']) * 11  # 9 API calls per domain (if treated separately from URLs)
         + len(selected_category['hashes']) * 5  # 4 API calls per hash
         + len(selected_category['cves']) * 3
         + len(selected_category['orgs']) * 2
@@ -2263,11 +2275,9 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         suspicious_score = report_vt_ip['data']['attributes']['last_analysis_stats']['suspicious']
                         last_analysis_date = report_vt_ip.get('data', {}).get('attributes', {}).get('last_analysis_date', None)
                         if last_analysis_date:
-                            # Format the date as needed, e.g., converting from timestamp if necessary
                             last_analysis_date_formatted = datetime.utcfromtimestamp(last_analysis_date).strftime('%Y-%m-%d %H:%M:%S')
                         else:
                             last_analysis_date_formatted = "N/A"
-                        # last_analysis_date = format_date(extract_last_analysis_date(report_vt_ip))
                         av_vendors = extract_av_vendors(report_vt_ip)
                         crowdsourced_context = report_vt_ip['data']['attributes'].get('crowdsourced_context', 'N/A')
                         crowdsourced_context_formatted = format_crowdsourced_context(crowdsourced_context)
@@ -2276,9 +2286,35 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         categories = report_vt_ip.get('data', {}).get('attributes', {}).get('categories', None)
                         categories_str = process_dynamic_field(categories)
                         popularity_ranks = report_vt_ip.get('data', {}).get('attributes', {}).get('popularity_ranks', {})
-                        
                         popularity_str = ', '.join([f"{source}: {info.get('rank')}" for source, info in popularity_ranks.items()])
-                    
+                        registrar = report_vt_ip.get('data', {}).get('attributes', {}).get('registrar', 'N/A')
+                        creation_date = report_vt_ip.get('data', {}).get('attributes', {}).get('creation_date', 'N/A')
+                        if creation_date != 'N/A':
+                            creation_date = datetime.utcfromtimestamp(creation_date).strftime('%Y-%m-%d %H:%M:%S')
+                
+                        # Extract Passive DNS data
+                        passive_dns_data = report_vt_ip.get("passive_dns", [])
+                        if passive_dns_data:
+                            passive_dns_str = "\n".join([
+                                f"    - Hostname: {sanitize_and_defang(item)['hostname']}\n     - Resolved Date: {item['resolved_date']}"
+                                for item in passive_dns_data
+                            ])
+                            passive_dns_formatted = f"  - Passive DNS Data:\n{passive_dns_str}\n"
+                        else:
+                            passive_dns_formatted = "  - Passive DNS Data: N/A\n"
+                        
+                        # Extract Communicating Files data
+                        communicating_files_data = report_vt_ip.get("communicating_files", [])
+                        if communicating_files_data:
+                            communicating_files_str = "\n".join([
+                                f"    - File ID: {item['file_id']}\n     - SHA256: {item['sha256']}\n     - First Submission Date: {item['first_submission_date']}"
+                                for item in communicating_files_data
+                            ])
+                            communicating_files_formatted = f"  - Communicating Files:\n{communicating_files_str}\n"
+                        else:
+                            communicating_files_formatted = "  - Communicating Files: N/A\n"
+                
+                        # Build the VirusTotal result string
                         vt_result = (
                             f"  - IOC: {sanitize_and_defang(entry)}\n"
                             f"  - Malicious Vendor Score: {malicious_score}\n"
@@ -2291,12 +2327,13 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             f"  - Popularity Ranks: {popularity_str}\n"
                             f"  - Registrar: {registrar}\n"
                             f"  - Creation Date: {creation_date}\n"
+                            f"{passive_dns_formatted}"
+                            f"{communicating_files_formatted}"
                             f"  - Crowdsourced Context:\n    {crowdsourced_context_formatted}\n"
                             f"  - Last Analysis Date: {last_analysis_date_formatted}\n"
                         )
                         
-                        
-                        # Append the report
+                        # Append the VirusTotal report to the combined report
                         combined_report += f"VirusTotal Report:\n{vt_result}\n"
                     
     
@@ -2449,13 +2486,20 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
     
                 elif category == "urls" or category == "domains":
                     trusted_provider_found = []
-                    report_vt_url = None
+                    report_vt = None
                     report_urlscan = None
                     report_alienvault = None
                     report_ipqualityscore = None
                     report_binaryedge_url = None
                     report_metadefender_url = None
                     report_hybrid_analysis_url = None
+
+                    # Determine if the entry is a domain or URL
+                    is_domain_ioc = is_domain(entry)
+                    if is_domain_ioc:
+                        print(f"DEBUG: Entry '{entry}' identified as a domain.")
+                    else:
+                        print(f"DEBUG: Entry '{entry}' identified as a URL.")
 
                     
                     urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
@@ -2500,7 +2544,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         progress_bar.value += 1
                 
                 
-                    url_id = submit_url_for_analysis(entry, status_output, progress_bar)
+                    report_vt = handle_virustotal_ioc(entry, status_output, progress_bar)
                     if progress_bar:
                         progress_bar.value += 1
                 
@@ -2515,20 +2559,14 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         progress_bar.value += 1
                 
                 
-                    if url_id:
-                        time.sleep(16)
-                        report_vt_url = get_url_report(url_id, status_output, progress_bar)
+                    
+                    if urlscan_uuid:
+                        report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
                         if progress_bar:
                             progress_bar.value += 1
                 
-                    
-                        if urlscan_uuid:
-                            report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
-                            if progress_bar:
-                                progress_bar.value += 1
-                    
-                        else:
-                            report_urlscan = None
+                    else:
+                        report_urlscan = None
 
                 
                     report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
@@ -2619,7 +2657,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     # Calculate verdict and score breakdown
                     total_score, score_breakdown, verdict = calculate_total_malicious_score(
                         {
-                            "VirusTotal": report_vt_url,
+                            "VirusTotal": report_vt,
                             "URLScan": report_urlscan,
                             "AlienVault": report_alienvault,
                             "IPQualityScore": report_ipqualityscore,
@@ -2645,69 +2683,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     #     combined_report += f"Verdict: {verdict} (Score: {total_score})\n\n"
                 
                     # VirusTotal Report
-                    if report_vt_url and isinstance(report_vt_url, dict):
-                        try:
-                            last_analysis_stats = report_vt_url['data']['attributes'].get('last_analysis_stats', {})
-                            harmless = last_analysis_stats.get('harmless', 'N/A')
-                            malicious = last_analysis_stats.get('malicious', 'N/A')
-                            suspicious = last_analysis_stats.get('suspicious', 'N/A')
-                            timeout = last_analysis_stats.get('timeout', 'N/A')
-                            undetected = last_analysis_stats.get('undetected', 'N/A')
-                    
-                            last_analysis_date = report_vt_url.get('data', {}).get('attributes', {}).get('last_analysis_date', None)
-                            last_analysis_date_formatted = (
-                                datetime.utcfromtimestamp(last_analysis_date).strftime('%Y-%m-%d %H:%M:%S')
-                                if last_analysis_date else "N/A"
-                            )
-                    
-                            av_vendors = extract_av_vendors(report_vt_url)
-                            tags = safe_join(', ', report_vt_url['data']['attributes'].get('tags', [])) or 'N/A'
-                            categories = report_vt_url['data']['attributes'].get('categories', {})
-                            categories_str = process_dynamic_field(categories)
-                            popularity_ranks = report_vt_url['data']['attributes'].get('popularity_ranks', {})
-                            popularity_str = safe_join(', ', [f"{source}: {info.get('rank')}" for source, info in popularity_ranks.items() if isinstance(info, dict)])
-                    
-                            # Extract last downloaded file
-                            last_downloaded_file_hash = report_vt_url['data']['attributes'].get('last_http_response_content_sha256', None)
-                            last_downloaded_file_info = "No last downloaded file found"
-                            if last_downloaded_file_hash:
-                                last_downloaded_file_info = f"Last downloaded file SHA256: {last_downloaded_file_hash}"
-                                
-                                # Fetch details about the last downloaded file
-                                file_report = get_hash_report(last_downloaded_file_hash, status_output, progress_bar)
-                                if file_report:
-                                    file_name = file_report['basic_properties'].get('file_name', 'N/A')
-                                    file_type = file_report['basic_properties'].get('file_type', 'N/A')
-                                    detections = f"{file_report['basic_properties'].get('last_analysis_date', 'N/A')} UTC"
-                                    detection_count = len(file_report.get('malicious_vendors', []))
-                                    total_vendors = file_report.get('basic_properties', {}).get('total_av_engines', 63)
-                                    detection_info = f"{detection_count}/{total_vendors} security vendors detected this file"
-                                    last_downloaded_file_info = (
-                                        f"Last seen downloading file {file_name} of type {file_type} "
-                                        f"with sha256 {last_downloaded_file_hash} which was detected by {detection_info} "
-                                        f"on {detections}"
-                                    )
-                    
-                            vt_result = (
-                                f"  - IOC: {sanitize_and_defang(entry)}\n"
-                                f"  - Harmless: {harmless}, Malicious: {malicious}, Suspicious: {suspicious}, Timeout: {timeout}, Undetected: {undetected}\n"
-                                f"  - Malicious Vendors: {', '.join(av_vendors['malicious'])}\n"
-                                f"  - Suspicious Vendors: {', '.join(av_vendors['suspicious'])}\n"
-                                f"  - Tags: {tags}\n"
-                                f"  - Categories: {categories_str}\n"
-                                f"  - Popularity Ranks: {popularity_str}\n"
-                                f"  - Last Analysis Date: {last_analysis_date_formatted}\n"
-                                f"  - {last_downloaded_file_info}"
-                            )
-                            combined_report += f"VirusTotal Report:\n{vt_result}\n"
-                        except KeyError as e:
-                            combined_report += f"Error parsing VirusTotal report: {e}\n"
-                    
-                        crowdsourced_context = report_vt_url.get("data", {}).get("attributes", {}).get("crowdsourced_context", "N/A")
-                        crowdsourced_context_formatted = format_crowdsourced_context(crowdsourced_context)
-                        combined_report += f"  - Crowdsourced Context:\n    {crowdsourced_context_formatted}\n"
-                    else:
-                        combined_report += "VirusTotal Report:\nN/A\n"
+                    report_vt = handle_virustotal_ioc(entry, status_output, progress_bar)
+                    combined_report += report_vt + "\n"
                 
                     # AlienVault Report
                     if isinstance(report_alienvault, dict) and 'error' not in report_alienvault:
@@ -3003,6 +2980,28 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         else:
                             vt_result += "  - Dynamic Analysis Sandbox Detections:\n    None"
                             breakdown.append("Dynamic Analysis Sandbox Detections: None")
+
+                        # Extract Contacted IPs
+                        contacted_ips_data = report_vt_hash.get("contacted_ips", [])
+                        if contacted_ips_data:
+                            contacted_ips_str = "\n".join([
+                                f"    - IP Address: {item['ip_address']}, Country: {item['country']}"
+                                for item in contacted_ips_data
+                            ])
+                            combined_report += f"  - Contacted IPs:\n{contacted_ips_str}\n"
+                        else:
+                            combined_report += "  - Contacted IPs: N/A\n"
+                    
+                        # Extract Contacted Domains
+                        contacted_domains_data = report_vt_hash.get("contacted_domains", [])
+                        if contacted_domains_data:
+                            contacted_domains_str = "\n".join([
+                                f"    - Domain: {item['domain']}"
+                                for item in contacted_domains_data
+                            ])
+                            combined_report += f"  - Contacted Domains:\n{contacted_domains_str}\n"
+                        else:
+                            combined_report += "  - Contacted Domains: N/A\n"
                         
                         # Append VirusTotal result to the combined report
                         combined_report += f"VirusTotal Report:\n{vt_result}\n"
