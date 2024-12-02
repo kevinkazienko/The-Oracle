@@ -363,26 +363,35 @@ def submit_url_for_rescan(url_id, status_output=None, progress_bar=None):
         print(f"Failed to submit ID {url_id} for rescan. Status Code: {response.status_code}")
         return None
 
-def get_downloaded_files(entry):
-    url = f"https://www.virustotal.com/api/v3/urls/{entry}/relations"
+def get_downloaded_files(domain):
+    """
+    Fetch the downloaded files associated with a domain, including last analysis stats.
+    """
+    url = f"https://www.virustotal.com/api/v3/domains/{domain}/downloaded_files"
     headers = {
         "accept": "application/json",
         "x-apikey": virus_total_api_key
     }
     response = requests.get(url, headers=headers)
-    print(f"DEBUG: Response JSON for Downloaded Files (URL: {entry}):\n{response.json()}\n")
     if response.status_code == 200:
         data = response.json()
-        downloaded_files = [
+        return [
             {
                 "sha256": file.get("id"),
-                "meaningful_name": file["attributes"].get("meaningful_name", "N/A")
+                "meaningful_name": file.get("attributes", {}).get("meaningful_name", "Unknown"),
+                "type": file.get("attributes", {}).get("type_description", "Unknown"),
+                "tags": file.get("attributes", {}).get("tags", []),
+                "last_analysis_stats": file.get("attributes", {}).get("last_analysis_stats", {
+                    "malicious": 0,
+                    "suspicious": 0,
+                    "undetected": 0,
+                    "harmless": 0
+                })
             }
-            for file in data.get("data", []) if file.get("type") == "file"
+            for file in data.get("data", [])
         ]
-        return downloaded_files
     else:
-        print(f"Failed to fetch relations for entry: {entry}. Status Code: {response.status_code}")
+        print(f"Failed to fetch downloaded files for {domain}. Status Code: {response.status_code}")
         return []
 
 def submit_domain_for_rescan(domain, status_output=None, progress_bar=None):
@@ -570,7 +579,7 @@ def get_domain_passive_dns(domain, status_output=None, progress_bar=None):
                 }
                 resolutions.append(resolution)
             
-            print(f"DEBUG: Parsed Resolutions:\n{json.dumps(resolutions, indent=4)}\n")  # Log parsed data
+            #print(f"DEBUG: Parsed Resolutions:\n{json.dumps(resolutions, indent=4)}\n")  # Log parsed data
             return resolutions
         
         except Exception as e:

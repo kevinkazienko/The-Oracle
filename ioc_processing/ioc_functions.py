@@ -3021,8 +3021,23 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             popularity_ranks = attributes.get('popularity_ranks', {})
                             popularity_str = ', '.join([f"{source}: {info.get('rank')}" for source, info in popularity_ranks.items() if isinstance(info, dict)])
                     
-                            # Extract last downloaded file (domains may not have this, so we skip this part)
-                            last_downloaded_file_info = "No last downloaded file found"
+                            # Fetch last downloaded files
+                            downloaded_files = get_downloaded_files(entry)
+                            if downloaded_files:
+                                downloaded_files_str = "\n".join([
+                                    f"    - Name: {file.get('meaningful_name', 'Unknown')}\n"
+                                    f"      - SHA256: {file.get('sha256', 'N/A')}\n"
+                                    f"      - Type: {file.get('type', 'N/A')}\n"
+                                    f"      - Tags: {', '.join(file.get('tags', [])) or 'N/A'}\n"
+                                    f"      - Last Analysis Stats:\n       - Malicious: {file['last_analysis_stats'].get('malicious', 0)}, "
+                                    f"Suspicious: {file['last_analysis_stats'].get('suspicious', 0)}, "
+                                    f"Undetected: {file['last_analysis_stats'].get('undetected', 0)}, "
+                                    f"Harmless: {file['last_analysis_stats'].get('harmless', 0)}"
+                                    for file in downloaded_files
+                                ])
+                                last_downloaded_file_info = f"Downloaded Files:\n{downloaded_files_str}"
+                            else:
+                                last_downloaded_file_info = "No downloaded files found.\n"
                     
                             # Build the report
                             vt_result = (
@@ -3044,10 +3059,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                 #print(f"DEBUG: Retrieved passive DNS data: {json.dumps(passive_dns_data, indent=4)}")
                                 passive_dns_str = "\n".join([
                                     f"    - IP Address: {sanitize_and_defang(entry)['ip_address']}\n    - Resolved Date: {entry['resolved_date']}\n"
-                                    f"    - IP AV Detections:\n    - Malicious: {entry['ip_av_detections']['malicious']}\n"
-                                    f"    - Suspicious: {entry['ip_av_detections']['suspicious']}\n"
-                                    f"    - Undetected: {entry['ip_av_detections']['undetected']}\n"
-                                    f"    - Harmless: {entry['ip_av_detections']['harmless']}"
+                                    f"    - IP AV Detections: Malicious: {entry['ip_av_detections']['malicious']}, "
+                                    f"Suspicious: {entry['ip_av_detections']['suspicious']}, "
+                                    f"Undetected: {entry['ip_av_detections']['undetected']}, "
+                                    f"Harmless: {entry['ip_av_detections']['harmless']}"
                                     for entry in passive_dns_data
                                 ])
                                 vt_result += f"  - Passive DNS Replication:\n{passive_dns_str}\n"
