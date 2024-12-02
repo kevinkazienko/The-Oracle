@@ -37,10 +37,14 @@ from api_interactions.virustotal import (
     needs_rescan,
     submit_ip_for_rescan,
     get_ip_communicating_files,
+    get_file_name_from_virustotal,
     get_ip_passive_dns,
     submit_url_for_rescan,
     submit_domain_for_rescan,
-    submit_hash_for_rescan
+    submit_hash_for_rescan,
+    get_downloaded_files,
+    get_domain_passive_dns,
+    #get_ip_av_detections
 )
 from api_interactions.shodan import get_shodan_report, search_shodan_cve_country, search_shodan_product_country, search_shodan_org, search_shodan_by_port, search_shodan_product_in_country, search_shodan_product_port_country
 from api_interactions.alienvault import get_alienvault_report
@@ -1269,82 +1273,81 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                     else:
                         score_breakdown.append("MetaDefender: No data available")
 
-                # Hybrid Analysis Parsing for Score Breakdown
                 if 'Hybrid-Analysis' in reports:
                     hybrid_analysis_report = reports.get("Hybrid-Analysis", {})
                     if isinstance(hybrid_analysis_report, dict):
                         try:
-                            # General information with debug output
-                            report_id = hybrid_analysis_report.get("id", "N/A")
-                            submission_type = hybrid_analysis_report.get("submission_type", "N/A")
-                            finished = hybrid_analysis_report.get("finished", False)
-                            sha256 = hybrid_analysis_report.get("sha256", "N/A")
-                
-                            print(f"DEBUG: Processing Hybrid-Analysis report ID: {report_id}")
-                
-                            # Initialize score for Hybrid Analysis
+                            # Initialize Hybrid-Analysis score
                             hybrid_analysis_score = 0
                             
-                            # Process `scanners` for scoring with debug
-                            scanners = hybrid_analysis_report.get("scanners", [])
-                            for scanner in scanners:
-                                status = scanner.get("status", "N/A")
-                                print(f"DEBUG: Scanner '{scanner.get('name', 'N/A')}' status: {status}")
-                                
-                                if status == "unsure":
-                                    hybrid_analysis_score += 0.5
-                                elif status not in ["no-classification", "no-result", "clean"]:
-                                    hybrid_analysis_score += 1  # Score for any other status
+                            # Extract 'results' as a list
+                            detailed_entries = hybrid_analysis_report.get("entries", [])  # Ensure the key matches the actual report
+                            if not isinstance(detailed_entries, list):
+                                print("DEBUG: 'entries' key missing or not a list in Hybrid-Analysis report.")
+                                detailed_entries = []
                             
-                            # Process `scanners_v2` for scoring with debug and None check
-                            scanners_v2 = hybrid_analysis_report.get("scanners_v2", {})
-                            for scanner_key, scanner in scanners_v2.items():
-                                if scanner:  # Ensure the scanner data is not None
-                                    status = scanner.get("status", "N/A")
-                                    print(f"DEBUG: Scanner_v2 '{scanner.get('name', 'N/A')}' status: {status}")
-                                    
-                                    if status == "unsure":
-                                        hybrid_analysis_score += 0.5
-                                    elif status not in ["no-classification", "no-result", "clean"]:
-                                        hybrid_analysis_score += 1  # Score for any other status
+                            print(f"DEBUG: Found {len(detailed_entries)} entries in Hybrid-Analysis report.")
                 
-                            # Calculate weighted score and update total score
+                            # Iterate through each detailed entry
+                            for idx, entry in enumerate(detailed_entries, start=1):
+                                verdict = entry.get("verdict", "unknown")
+                                av_detect = entry.get("av_detect", 0)
+                                threat_score = entry.get("threat_score", 0)
+                                vx_family = entry.get("vx_family", "N/A")
+                                print(f"DEBUG: Entry {idx}: Verdict={verdict}, AV Detect={av_detect}, Threat Score={threat_score}, VX Family={vx_family}")
+                
+                                # Assign scores based on threat score and AV detections
+                                if verdict == "malicious":
+                                    hybrid_analysis_score += 5
+                                elif verdict == "suspicious":
+                                    hybrid_analysis_score += 3
+                                elif verdict == "unknown":
+                                    hybrid_analysis_score += 1
+                
+                                # Additional points for high AV detections or threat scores
+                                if av_detect >= 3:
+                                    hybrid_analysis_score += 2
+                                if threat_score >= 50:
+                                    hybrid_analysis_score += 3
+                
+                            # Calculate weighted score for Hybrid-Analysis
                             hybrid_analysis_weighted_score = calculate_vendor_score("Hybrid-Analysis", hybrid_analysis_score)
                             total_score += hybrid_analysis_weighted_score
                             malicious_count += 1 if hybrid_analysis_score > 0 else 0
                 
-                            # Format and append Hybrid Analysis details to score breakdown
+                            # Format score breakdown for Hybrid-Analysis
                             score_breakdown.append(
-                                f"Hybrid-Analysis:\n  Report ID: {report_id}\n"
-                                f"  Submission Type: {submission_type}\n  Finished: {'Yes' if finished else 'No'}\n"
-                                f"  SHA256: {sha256}\n  Score Contribution (Weighted): {hybrid_analysis_weighted_score}"
+                                f"Hybrid-Analysis:\n"
+                                f"  Total Entries: {len(detailed_entries)}\n"
+                                f"  Score Contribution (Weighted): {hybrid_analysis_weighted_score}"
                             )
-                            
-                            # Add details of each scanner from `scanners` and `scanners_v2` with debug info
-                            for scanner in scanners:
-                                score_breakdown.append(
-                                    f"  Scanners:\n"
-                                    f"    {scanner['name']}:\n"
-                                    f"      Status: {scanner['status']}\n"
-                                    f"      Progress: {scanner['progress']}"
-                                )
-                                score_breakdown.append(
-                                    f"  Scanners v2:"
-                                )
-                            for scanner_key, scanner in scanners_v2.items():
-                                if scanner:  # Only append if scanner is not None
-                                    score_breakdown.append(
-                                        f"    {scanner.get('name', 'N/A')}:\n"
-                                        f"      Status: {scanner.get('status', 'N/A')}\n"
-                                        f"      Progress: {scanner.get('progress', 'N/A')}"
-                                    )
                 
-                            print(f"DEBUG: Completed Hybrid-Analysis score breakdown with score: {hybrid_analysis_weighted_score}")
+                            # Append detailed entries to score breakdown
+                            for idx, entry in enumerate(detailed_entries, start=1):
+                                score_breakdown.append(
+                                    f"  - Entry {idx}:\n"
+                                    f"    Verdict: {entry.get('verdict', 'N/A')}\n"
+                                    f"    AV Detect: {entry.get('av_detect', 'N/A')}\n"
+                                    f"    Threat Score: {entry.get('threat_score', 'N/A')}\n"
+                                    f"    VX Family: {entry.get('vx_family', 'N/A')}\n"
+                                    f"    Job ID: {entry.get('job_id', 'N/A')}\n"
+                                    f"    SHA256: {entry.get('sha256', 'N/A')}\n"
+                                    f"    Environment ID: {entry.get('environment_id', 'N/A')}\n"
+                                    f"    Analysis Start Time: {entry.get('analysis_start_time', 'N/A')}\n"
+                                    f"    Submit Name: {entry.get('submit_name', 'N/A')}\n"
+                                    f"    Environment Description: {entry.get('environment_description', 'N/A')}\n"
+                                    f"    Size: {entry.get('size', 'N/A')}\n"
+                                    f"    Type: {entry.get('type', 'N/A')}\n"
+                                    f"    Type Short: {entry.get('type_short', 'N/A')}"
+                                )
+                
+                            print(f"DEBUG: Hybrid-Analysis weighted score calculated: {hybrid_analysis_weighted_score}")
                 
                         except Exception as e:
                             print(f"DEBUG: Error in Hybrid-Analysis parsing for score breakdown: {e}")
+                            score_breakdown.append("Hybrid-Analysis: Error processing report data.")
                     else:
-                        score_breakdown.append("Hybrid-Analysis: No data available")
+                        score_breakdown.append("Hybrid-Analysis: No data available.")
             
                 # Borealis-related sections (AUWL, AlphabetSoup, etc.)
                 if borealis_breakdown:
@@ -2271,7 +2274,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         av_vendors = extract_av_vendors(report_vt_ip)
                         crowdsourced_context = report_vt_ip['data']['attributes'].get('crowdsourced_context', 'N/A')
                         crowdsourced_context_formatted = format_crowdsourced_context(crowdsourced_context)
-                        
+                    
                         tags = ', '.join(report_vt_ip['data']['attributes'].get('tags', [])) if report_vt_ip['data']['attributes'].get('tags') else 'N/A'
                         categories = report_vt_ip.get('data', {}).get('attributes', {}).get('categories', None)
                         categories_str = process_dynamic_field(categories)
@@ -2281,7 +2284,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         creation_date = report_vt_ip.get('data', {}).get('attributes', {}).get('creation_date', 'N/A')
                         if creation_date != 'N/A':
                             creation_date = datetime.utcfromtimestamp(creation_date).strftime('%Y-%m-%d %H:%M:%S')
-                
+                    
                         # Extract Passive DNS data
                         passive_dns_data = report_vt_ip.get("passive_dns", [])
                         if passive_dns_data:
@@ -2292,19 +2295,37 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             passive_dns_formatted = f"  - Passive DNS Data:\n{passive_dns_str}\n"
                         else:
                             passive_dns_formatted = "  - Passive DNS Data: N/A\n"
-                        
+                    
                         # Extract Communicating Files data
                         communicating_files_data = report_vt_ip.get("communicating_files", [])
                         if communicating_files_data:
                             communicating_files_str = "\n".join([
-                                f"    - File ID: {item['file_id']}\n     - SHA256: {item['sha256']}\n     - First Submission Date: {item['first_submission_date']}"
+                                f"    - File Name: {item.get('file_name', 'N/A')}\n"
+                                f"     - SHA256: {item.get('sha256', 'N/A')}\n"
+                                f"     - First Submission Date: {item.get('first_submission_date', 'N/A')}\n"
+                                f"     - AV Detections: Malicious: {item.get('av_detections', {}).get('malicious', 0)}, "
+                                f"Suspicious: {item.get('av_detections', {}).get('suspicious', 0)}, "
+                                f"Undetected: {item.get('av_detections', {}).get('undetected', 0)}, "
+                                f"Harmless: {item.get('av_detections', {}).get('harmless', 0)}"
                                 for item in communicating_files_data
                             ])
                             communicating_files_formatted = f"  - Communicating Files:\n{communicating_files_str}\n"
                         else:
                             communicating_files_formatted = "  - Communicating Files: N/A\n"
-                
-                        # Build the VirusTotal result string
+                    
+                        # Fetch downloaded files via relations endpoint
+                        downloaded_files = get_downloaded_files(entry)
+                        if downloaded_files:
+                            downloaded_files_str = "\n".join([
+                                f"    - File Name: {file.get('meaningful_name', 'N/A')}\n"
+                                f"     - SHA256: {file.get('sha256', 'N/A')}"
+                                for file in downloaded_files
+                            ])
+                            downloaded_files_formatted = f"  - Downloaded Files:\n{downloaded_files_str}\n"
+                        else:
+                            downloaded_files_formatted = "  - Downloaded Files: No files found in relations.\n"
+                        
+                        # Include the downloaded files in the report
                         vt_result = (
                             f"  - IOC: {sanitize_and_defang(entry)}\n"
                             f"  - Malicious Vendor Score: {malicious_score}\n"
@@ -2319,6 +2340,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             f"  - Creation Date: {creation_date}\n"
                             f"{passive_dns_formatted}"
                             f"{communicating_files_formatted}"
+                            f"{downloaded_files_formatted}"
                             f"  - Crowdsourced Context:\n    {crowdsourced_context_formatted}\n"
                             f"  - Last Analysis Date: {last_analysis_date_formatted}\n"
                         )
@@ -2569,10 +2591,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     
                 
                     # Check if the domain is resolving
-                    if report_urlscan and isinstance(report_urlscan, dict) and not report_urlscan.get('Resolving', True):
-                        combined_report += f"URLScan Report:\n  - The domain isn't resolving.\n\n"
-                        combined_report += f"Verdict: Not Malicious (Domain Not Resolving)\n\n"
-                        continue  # Skip further checks for this URL as it's not resolving
+                    #if report_urlscan and isinstance(report_urlscan, dict) and not report_urlscan.get('Resolving', True):
+                        #combined_report += f"URLScan Report:\n  - The domain isn't resolving.\n\n"
+                        #combined_report += f"Verdict: Not Malicious (Domain Not Resolving)\n\n"
+                        #continue  # Skip further checks for this URL as it's not resolving
                         
                     
                     borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
@@ -2743,12 +2765,12 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += "\nAlienVault OTX Report:\nN/A or Error\n\n"
                 
                     # URLScan Report
+                    # Check if the domain is resolving
                     if report_urlscan and isinstance(report_urlscan, dict):
-                        # Check if the domain is resolving
                         if not report_urlscan.get('Resolving', True):
                             combined_report += "URLScan Report:\n  - The domain isn't resolving.\n\n"
                             combined_report += "Verdict: Not Malicious (Domain Not Resolving)\n\n"
-                            continue  # Skip further checks for this URL as it's not resolving
+                            # Do not skip; include a placeholder report
                         else:
                             combined_report += "URLScan Report:\n"
                             combined_report += safe_join('\n', [f"  - {key}: {sanitize_and_defang(value)}" for key, value in report_urlscan.items()])
@@ -2869,10 +2891,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     
                 
                     # Check if the domain is resolving
-                    if report_urlscan and isinstance(report_urlscan, dict) and not report_urlscan.get('Resolving', True):
-                        combined_report += f"URLScan Report:\n  - The domain isn't resolving.\n\n"
-                        combined_report += f"Verdict: Not Malicious (Domain Not Resolving)\n\n"
-                        continue  # Skip further checks for this URL as it's not resolving
+                    #if report_urlscan and isinstance(report_urlscan, dict) and not report_urlscan.get('Resolving', True):
+                        #combined_report += f"URLScan Report:\n  - The domain isn't resolving.\n\n"
+                        #combined_report += f"Verdict: Not Malicious (Domain Not Resolving)\n\n"
+                        #continue  # Skip further checks for this URL as it's not resolving
                         
                     
                     borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
@@ -3016,16 +3038,37 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                 f"  - {last_downloaded_file_info}\n"
                             )
                     
+                            # Format Passive DNS data
+                            passive_dns_data = report_vt_dom.get("passive_dns", [])
+                            if passive_dns_data:
+                                #print(f"DEBUG: Retrieved passive DNS data: {json.dumps(passive_dns_data, indent=4)}")
+                                passive_dns_str = "\n".join([
+                                    f"    - IP Address: {sanitize_and_defang(entry)['ip_address']}\n    - Resolved Date: {entry['resolved_date']}\n"
+                                    f"    - IP AV Detections:\n    - Malicious: {entry['ip_av_detections']['malicious']}\n"
+                                    f"    - Suspicious: {entry['ip_av_detections']['suspicious']}\n"
+                                    f"    - Undetected: {entry['ip_av_detections']['undetected']}\n"
+                                    f"    - Harmless: {entry['ip_av_detections']['harmless']}"
+                                    for entry in passive_dns_data
+                                ])
+                                vt_result += f"  - Passive DNS Replication:\n{passive_dns_str}\n"
+                            else:
+                                vt_result += "  - Passive DNS Replication: No data available.\n"
+                    
+                            whois_raw = attributes.get('whois', 'N/A')
+                            if whois_raw and whois_raw != 'N/A':
+                                whois_lines = whois_raw.splitlines()  # Split the WHOIS data into lines
+                                whois_formatted = "\n".join([f"    - {line}" for line in whois_lines])  # Indent each line
+                                vt_result += f"  - Whois:\n{whois_formatted}\n"
+                            else:
+                                vt_result += "  - Whois: N/A\n"
+                    
                             # Include additional attributes from the domain JSON response
-                            # Iterate over the attributes and include them in the report
                             additional_attributes = [
                                 ('Reputation', attributes.get('reputation', 'N/A')),
                                 ('Creation Date', datetime.utcfromtimestamp(attributes.get('creation_date')).strftime('%Y-%m-%d %H:%M:%S') if attributes.get('creation_date') else 'N/A'),
                                 ('Registrar', attributes.get('registrar', 'N/A')),
-                                ('Whois', attributes.get('whois', 'N/A')),
                                 ('TLD', attributes.get('tld', 'N/A')),
                                 ('Last Modification Date', datetime.utcfromtimestamp(attributes.get('last_modification_date')).strftime('%Y-%m-%d %H:%M:%S') if attributes.get('last_modification_date') else 'N/A'),
-                                # Add more attributes as needed
                             ]
                     
                             for attr_name, attr_value in additional_attributes:
@@ -3067,8 +3110,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         # Check if the domain is resolving
                         if not report_urlscan.get('Resolving', True):
                             combined_report += "URLScan Report:\n  - The domain isn't resolving.\n\n"
-                            combined_report += "Verdict: Not Malicious (Domain Not Resolving)\n\n"
-                            continue  # Skip further checks for this URL as it's not resolving
+                            #combined_report += "Verdict: Not Malicious (Domain Not Resolving)\n\n"
+                            #continue  # Skip further checks for this URL as it's not resolving
                         else:
                             combined_report += "URLScan Report:\n"
                             combined_report += safe_join('\n', [f"  - {key}: {sanitize_and_defang(value)}" for key, value in report_urlscan.items()])
