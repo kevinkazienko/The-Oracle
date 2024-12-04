@@ -32,8 +32,7 @@ def analyze_with_metadefender(ioc, ioc_type=None, metadefender_api_key=None, sta
     if ioc_type == 'url':
         parsed_url = urllib.parse.urlparse(ioc)
         ioc = parsed_url.netloc
-        ioc_type = 'domain'
-        endpoint = f"domain/{ioc}"
+        endpoint = f"url/{ioc}"
     elif ioc_type == 'ip':
         endpoint = f"ip/{ioc}"
     elif ioc_type == 'domain':
@@ -74,8 +73,10 @@ def analyze_with_metadefender(ioc, ioc_type=None, metadefender_api_key=None, sta
         report = ""
         if ioc_type == 'ip':
             report = process_metadefender_ip_report(metadefender_data)
-        elif ioc_type in ['domain', 'url']:
+        elif ioc_type == 'url':
             report = process_metadefender_url_report(metadefender_data)
+        elif ioc_type == 'domain':
+            report = process_metadefender_dom_report(metadefender_data)
         elif ioc_type == 'hash':
             report = process_metadefender_hash_report(metadefender_data)
 
@@ -144,6 +145,44 @@ def process_metadefender_url_report(report):
     detection_summary = ', '.join(det.get('threat_name', 'Unknown Threat') for det in detections) or 'No threats detected'
     
     return f"Metadefender URL/Domain Report:\n  - Detections: {detection_summary}"
+
+
+def process_metadefender_dom_report(report):
+    if not report:
+        return "Metadefender Domain Report: No data available"
+    
+    # Extract the domain address
+    domain_address = report.get('address', 'Unknown Domain')
+
+    # Extract lookup results
+    lookup_results = report.get('lookup_results', {})
+    start_time = lookup_results.get('start_time', 'Unknown')
+    detected_by = lookup_results.get('detected_by', 0)
+
+    # Extract sources
+    sources = lookup_results.get('sources', [])
+    if not sources:
+        sources_summary = "No detection sources available"
+    else:
+        sources_summary = "\n".join(
+            f"  - Provider: {source.get('provider', 'Unknown Provider')}\n"
+            f"    - Assessment: {source.get('assessment', 'None')}\n"
+            f"     - Detect Time: {source.get('detect_time', 'N/A')}\n"
+            f"     - Update Time: {source.get('update_time', 'N/A')}\n"
+            f"     - Status: {source.get('status', 'Unknown')}"
+            for source in sources
+        )
+    
+    # Build the report
+    report_str = (
+        f"Metadefender Domain Report:\n"
+        f"  - Domain Address: {domain_address}\n"
+        f"    - Start Time: {start_time}\n"
+        f"    - Detected By: {detected_by} source(s)\n"
+        f"    - Sources:\n{sources_summary}"
+    )
+    
+    return report_str
 
 # Function to process Metadefender Hash reports
 def process_metadefender_hash_report(report):
@@ -227,6 +266,10 @@ def process_metadefender_hash_report(report):
         f"  - Detailed Results by Engine:\n" + "\n".join(detailed_results) + "\n"
         f"  - Sanitization Result: {sanitized_result} (Reason: {sanitized_reason})\n"
         f"  - DLP Verdict: {dlp_verdict}\n"
+        f"  - DLP Metadata Removal: {dlp_metadata_removal}\n"
+        f"  - DLP Recursive Processing: {dlp_recursive_processing}\n"
+        f"  - DLP Redact: {dlp_redact}\n"
+        f"  - DLP Watermark: {dlp_watermark}"
         f"  - DLP Metadata Removal: {dlp_metadata_removal}\n"
         f"  - DLP Recursive Processing: {dlp_recursive_processing}\n"
         f"  - DLP Redact: {dlp_redact}\n"
