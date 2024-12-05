@@ -59,7 +59,7 @@ from api_interactions.censys import get_censys_data, search_cves_on_censys, sear
 from api.api_keys import censys_api_key, censys_secret, metadefender_api_key
 from api_interactions.borealis import request_borealis, format_borealis_report
 from api_interactions.binaryedge import get_binaryedge_report, search_binaryedge_by_port, search_binaryedge_product, search_binaryedge_product_port_country
-from api_interactions.metadefender import analyze_with_metadefender, process_metadefender_ip_report, process_metadefender_url_report, process_metadefender_hash_report
+from api_interactions.metadefender import analyze_with_metadefender, process_metadefender_ip_report, process_metadefender_url_report, process_metadefender_hash_report, process_metadefender_dom_report
 from api_interactions.hybridanalysis import needs_hybridrescan, get_hybrid_analysis_hash_report, submit_hybridhash_for_rescan, parse_hybrid_analysis_report, print_hybrid_analysis_report, process_hybrid_analysis_report, submit_url_to_hybrid_analysis, parse_hybrid_analysis_url_report, fetch_hybrid_analysis_report, analyze_url_with_hybrid_analysis, HYBRID_ANALYSIS_BASE_URL, search_hybrid_analysis_by_term, handle_hybrid_analysis_ioc, parse_hybrid_analysis_ip_response, generate_hybrid_analysis_domain_report
 from api.api_keys import hybridanalysis_api_key
 from api_interactions.malshare import get_malshare_hash_report
@@ -1280,1022 +1280,70 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                             # Initialize Hybrid-Analysis score
                             hybrid_analysis_score = 0
                             
-                            # Extract 'results' as a list
-                            detailed_entries = hybrid_analysis_report.get("entries", [])  # Ensure the key matches the actual report
+                            # Extract 'result' or 'entries' as a list
+                            detailed_entries = hybrid_analysis_report.get("result", [])  # Adjust to 'result' for consistency with your data
                             if not isinstance(detailed_entries, list):
-                                print("DEBUG: 'entries' key missing or not a list in Hybrid-Analysis report.")
                                 detailed_entries = []
+                                print("DEBUG: 'result' key missing or not a list in Hybrid-Analysis report.")
                             
+                            # Debug: Log the number of entries found
                             print(f"DEBUG: Found {len(detailed_entries)} entries in Hybrid-Analysis report.")
-                
+                            
                             # Iterate through each detailed entry
                             for idx, entry in enumerate(detailed_entries, start=1):
                                 verdict = entry.get("verdict", "unknown")
                                 av_detect = entry.get("av_detect", 0)
                                 threat_score = entry.get("threat_score", 0)
                                 vx_family = entry.get("vx_family", "N/A")
+                                submit_name = entry.get("submit_name", "N/A")
+                                environment = entry.get("environment_description", "N/A")
+                                
+                                # Ensure threat_score is an integer or default to 0
+                                try:
+                                    threat_score = int(threat_score)
+                                except (ValueError, TypeError):
+                                    threat_score = 0
+                                
+                                # Debug: Log entry details
                                 print(f"DEBUG: Entry {idx}: Verdict={verdict}, AV Detect={av_detect}, Threat Score={threat_score}, VX Family={vx_family}")
-                
-                                # Assign scores based on threat score and AV detections
+                                
+                                # Assign scores based on verdict
                                 if verdict == "malicious":
-                                    hybrid_analysis_score += 5
-                                elif verdict == "suspicious":
-                                    hybrid_analysis_score += 3
-                                elif verdict == "unknown":
                                     hybrid_analysis_score += 1
-                
-                                # Additional points for high AV detections or threat scores
-                                if av_detect >= 3:
-                                    hybrid_analysis_score += 2
+                                elif verdict == "suspicious":
+                                    hybrid_analysis_score += .5
+                                elif verdict == "unknown":
+                                    hybrid_analysis_score += 0  # Small score for unknown verdict
+                                
+                                # Additional points for AV detections and threat scores
+                                if isinstance(av_detect, int) and av_detect >= 0:
+                                    hybrid_analysis_score += 1
                                 if threat_score >= 50:
-                                    hybrid_analysis_score += 3
-                
-                            # Calculate weighted score for Hybrid-Analysis
+                                    hybrid_analysis_score += 1
+                                
+                                # Append details for each entry to the score breakdown
+                                score_breakdown.append(
+                                    f"  - Entry {idx}:\n"
+                                    f"    Verdict: {verdict}\n"
+                                    f"    AV Detect: {av_detect}\n"
+                                    f"    Threat Score: {threat_score}\n"
+                                    f"    VX Family: {vx_family}\n"
+                                    f"    Submit Name: {submit_name}\n"
+                                    f"    Environment: {environment}\n"
+                                )
+                            
+                            # Calculate weighted score for Hybrid Analysis
                             hybrid_analysis_weighted_score = calculate_vendor_score("Hybrid-Analysis", hybrid_analysis_score)
                             total_score += hybrid_analysis_weighted_score
                             malicious_count += 1 if hybrid_analysis_score > 0 else 0
-                
-                            # Format score breakdown for Hybrid-Analysis
+                            
+                            # Append overall contribution to the score breakdown
                             score_breakdown.append(
                                 f"Hybrid-Analysis:\n"
                                 f"  Total Entries: {len(detailed_entries)}\n"
                                 f"  Score Contribution (Weighted): {hybrid_analysis_weighted_score}"
                             )
-                
-                            # Append detailed entries to score breakdown
-                            for idx, entry in enumerate(detailed_entries, start=1):
-                                score_breakdown.append(
-                                    f"  - Entry {idx}:\n"
-                                    f"    Verdict: {entry.get('verdict', 'N/A')}\n"
-                                    f"    AV Detect: {entry.get('av_detect', 'N/A')}\n"
-                                    f"    Threat Score: {entry.get('threat_score', 'N/A')}\n"
-                                    f"    VX Family: {entry.get('vx_family', 'N/A')}\n"
-                                    f"    Job ID: {entry.get('job_id', 'N/A')}\n"
-                                    f"    SHA256: {entry.get('sha256', 'N/A')}\n"
-                                    f"    Environment ID: {entry.get('environment_id', 'N/A')}\n"
-                                    f"    Analysis Start Time: {entry.get('analysis_start_time', 'N/A')}\n"
-                                    f"    Submit Name: {entry.get('submit_name', 'N/A')}\n"
-                                    f"    Environment Description: {entry.get('environment_description', 'N/A')}\n"
-                                    f"    Size: {entry.get('size', 'N/A')}\n"
-                                    f"    Type: {entry.get('type', 'N/A')}\n"
-                                    f"    Type Short: {entry.get('type_short', 'N/A')}"
-                                )
-                
-                            print(f"DEBUG: Hybrid-Analysis weighted score calculated: {hybrid_analysis_weighted_score}")
-                
-                        except Exception as e:
-                            print(f"DEBUG: Error in Hybrid-Analysis parsing for score breakdown: {e}")
-                            score_breakdown.append("Hybrid-Analysis: Error processing report data.")
-                    else:
-                        score_breakdown.append("Hybrid-Analysis: No data available.")
-            
-                # Borealis-related sections (AUWL, AlphabetSoup, etc.)
-                if borealis_breakdown:
-                    try:
-                        score_breakdown.append(f"Borealis Report:\n{borealis_breakdown}")
-                    except Exception as e:
-                        print(f"DEBUG: Error in Borealis parsing: {e}")
-            
-                # AUWL parsing for URLs/Domains
-                if "AUWL" in borealis_report.get("modules", {}):
-                    try:
-                        auwl_report = borealis_report["modules"].get("AUWL", [])
-                        phishing_count = 0
-                        for cluster in auwl_report:
-                            cluster_name = cluster.get('clusterName', 'N/A')
-                            cluster_category = cluster.get('clusterCategory', 'N/A')
-                            if cluster_category.lower() in ["phishing", "malware", "suspicious"]:
-                                phishing_count += 1
-                            score_breakdown.append(f"AUWL Cluster: {cluster_name}, Category: {cluster_category}")
-                        
-                        auwl_weighted_score = calculate_vendor_score("AUWL", phishing_count)
-                        total_score += auwl_weighted_score
-                        malicious_count += phishing_count
-                        score_breakdown.append(f"AUWL: Score Contribution: {auwl_weighted_score}")
-                    except Exception as e:
-                        print(f"DEBUG: Error in AUWL parsing: {e}")
-                else:
-                    score_breakdown.append("AUWL: No relevant data found.")
-            
-                # AlphabetSoup parsing (DGA detection)
-                # if "ALPHABETSOUP" in borealis_report.get("modules", {}):
-                #     try:
-                #         alphabetsoup_report = borealis_report["modules"].get("ALPHABETSOUP", {})
-                #         dga_detected = alphabetsoup_report.get("isDGA", False)
-                #         if dga_detected:
-                #             alphabetsoup_weighted_score = calculate_vendor_score("ALPHABETSOUP", 1)
-                #             total_score += alphabetsoup_weighted_score
-                #             malicious_count += 1
-                #             score_breakdown.append(f"AlphabetSoup: DGA Detected (malicious) - Score Contribution: {alphabetsoup_weighted_score}")
-                #         else:
-                #             score_breakdown.append("AlphabetSoup: No DGA detected")
-                #     except Exception as e:
-                #         print(f"DEBUG: Error in AlphabetSoup parsing: {e}")
-                # else:
-                #     score_breakdown.append("AlphabetSoup: No relevant data found.")
-            
-                # # Top1M parsing (Majestic, Tranco, Cisco block detection)
-                # if "TOP1MILLION" in borealis_report.get("modules", {}):
-                #     try:
-                #         top1m_report = borealis_report["modules"].get("TOP1MILLION", [])
-                #         blocked_by = []
-                        
-                #         for entry in top1m_report:
-                #             list_name = entry.get("listName", "Unknown")
-                #             in_list = entry.get("inList", False)
-                #             if in_list:
-                #                 blocked_by.append(list_name)
-                #                 rank = entry.get("rank", "N/A")
-                #                 score_breakdown.append(f"  {list_name.capitalize()} list - In List: {in_list}, Rank: {rank}")
-                        
-                #         if blocked_by:
-                #             top1m_weighted_score = calculate_vendor_score("TOP1MILLION", len(blocked_by))
-                #             total_score += top1m_weighted_score
-                #             malicious_count += 1
-                #             score_breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)} - Score Contribution: {top1m_weighted_score}")
-                #         else:
-                #             score_breakdown.append("Top1M: Not blocked by Majestic, Tranco, or Cisco")
-                #     except Exception as e:
-                #         print(f"DEBUG: Error in Top1M parsing: {e}")
-                # else:
-                #     score_breakdown.append("Top1M: No relevant data found.")
-            
-                # Stonewall parsing (approval for blocking)
-                # if "STONEWALL" in borealis_report.get("modules", {}):
-                #     try:
-                #         stonewall_report = borealis_report["modules"].get("STONEWALL", {})
-                #         approved_for_blocking = stonewall_report.get("decision", "").lower() == "approved"
-                #         if approved_for_blocking:
-                #             stonewall_weighted_score = calculate_vendor_score("STONEWALL", 1)
-                #             total_score += stonewall_weighted_score
-                #             malicious_count += 1
-                #             score_breakdown.append(f"Stonewall: Approved for blocking (malicious) - Score Contribution: {stonewall_weighted_score}")
-                #         else:
-                #             score_breakdown.append("Stonewall: Not approved for blocking")
-                #     except Exception as e:
-                #         print(f"DEBUG: Error in Stonewall parsing: {e}")
-                # else:
-                #     score_breakdown.append("Stonewall: No relevant data found.")
-    
-            # Hash-based IOC
-            elif ioc_type == "hash":
-                # VirusTotal parsing
-                if 'VirusTotal' in reports:
-                    vt_report = reports['VirusTotal']
-                    malicious_count, suspicious_count, last_analysis_date_formatted, crowdsourced_context, tags, registrar, creation_date = extract_vt_analysis(vt_report)
-                
-                    malicious_count = malicious_count or 0
-                    suspicious_count = suspicious_count or 0
-                
-                    # Calculate and add VirusTotal score directly without max score limit
-                    vt_score = (malicious_count * 1) + (suspicious_count * 0.5)
-                    total_score += vt_score
-                
-                    # Extract categories, popularity ranks, and additional details
-                    categories = vt_report.get('data', {}).get('attributes', {}).get('categories', {})
-                    categories_str = process_dynamic_field(categories)
-                    popularity_ranks = vt_report.get('data', {}).get('attributes', {}).get('popularity_ranks', {})
-                    popularity_str = process_dynamic_field(popularity_ranks)
-                
-                    # Update score breakdown with extracted details
-                    score_breakdown.append(f"VirusTotal:\n  Malicious={malicious_count}\n  Suspicious={suspicious_count}")
-                    score_breakdown.append(f"  Categories: {categories_str}")
-                    score_breakdown.append(f"  Popularity Ranks: {popularity_str}")
-                    score_breakdown.append(f"  Tags: {tags}")
-                    score_breakdown.append(f"  Last Analysis Date: {last_analysis_date_formatted}")
-                
-                    # Process and score signature information
-                    signature_info = vt_report.get('data', {}).get('attributes', {}).get('signature_info', {})
-                    if isinstance(signature_info, dict):
-                        verified = signature_info.get('verified', 'Invalid')
-                        signers = ', '.join(signature_info.get('signers', 'Unknown')) if isinstance(signature_info.get('signers'), list) else "Unknown"
-                        
-                        if verified == 'Signed':
-                            score_breakdown.append(f"  Signature: Valid (Signed by: {signers})")
-                            total_score -= 2  # Reduce score for valid signature
-                        else:
-                            score_breakdown.append("  Signature: Invalid or not present")
-                            total_score += 20  # Increase score if invalid or not found
-                    else:
-                        score_breakdown.append("  Signature: No signature information available")
-                
-                    # Format and add crowdsourced context
-                    crowdsourced_context_formatted = format_crowdsourced_context(crowdsourced_context) if isinstance(crowdsourced_context, dict) else crowdsourced_context or 'N/A'
-                    score_breakdown.append(f"  Crowdsourced Context: {crowdsourced_context_formatted}")
-                
-                    # Process and score threat severity
-                    threat_severity = vt_report.get('data', {}).get('attributes', {}).get('threat_severity', {})
-                    severity_level = threat_severity.get('level_description', 'N/A')
-                    threat_category = threat_severity.get('threat_severity_data', {}).get('popular_threat_category', 'N/A')
-                    num_gav_detections = threat_severity.get('threat_severity_data', {}).get('num_gav_detections', 0)
-                    
-                    score_breakdown.append(f"  Threat Severity: {severity_level}, Category: {threat_category}, GAV Detections: {num_gav_detections}")
-                    total_score += 10  # Adjust score based on threat severity
-                
-                    # Process Sigma rules and add score
-                    sigma_rules = vt_report.get('data', {}).get('attributes', {}).get('sigma_analysis_results', [])
-                    if sigma_rules:
-                        sigma_rule_names = [rule.get('rule_title', 'Unknown Sigma Rule') for rule in sigma_rules]
-                        score_breakdown.append(f"  Sigma Rules: {', '.join(sigma_rule_names)}")
-                        total_score += len(sigma_rules) * 5
-                
-                    # YARA Rules (Livehunt) parsing and scoring
-                    livehunt_yara_rules = vt_report.get('livehunt_yara_rules', [])
-                    if livehunt_yara_rules:
-                        total_score += len(livehunt_yara_rules) * 10  # Weight for each matching YARA rule
-                        score_breakdown.append(f"  Livehunt YARA Rules: {', '.join([rule['rule_name'] for rule in livehunt_yara_rules])}")
-                
-                    # Crowdsourced YARA rules parsing and scoring
-                    crowdsourced_yara_rules = vt_report.get('crowdsourced_yara_rules', [])
-                    if crowdsourced_yara_rules:
-                        total_score += len(crowdsourced_yara_rules) * 5  # Weight for each community YARA rule
-                        score_breakdown.append(f"  Crowdsourced YARA Rules: {', '.join([rule['rule_name'] for rule in crowdsourced_yara_rules])}")
-                
-                    # Dynamic Analysis Sandbox Detections parsing and scoring
-                    sandbox_detections = vt_report.get('sandbox_verdicts', [])
-                    if sandbox_detections:
-                        total_score += len(sandbox_detections) * 8  # Weight for each sandbox detection
-                        score_breakdown.append(f"  Dynamic Analysis Sandbox Detections: {', '.join([d['verdict'] for d in sandbox_detections])}")
-                
-                else:
-                    score_breakdown.append("VirusTotal: No data available")
-    
-    
-                # MalwareBazaar parsing
-                if 'MalwareBazaar' in reports:
-                    malwarebazaar_report = reports.get("MalwareBazaar", {})
-                    if isinstance(malwarebazaar_report, dict):
-                        country = malwarebazaar_report.get("origin_country", "N/A")
-                        intelligence = malwarebazaar_report.get("intelligence", {})
-                        downloads = int(intelligence.get("downloads", 0))
-                        uploads = int(intelligence.get("uploads", "0"))
-                        delivery_method = malwarebazaar_report.get("delivery_method", "N/A")
-                        
-                        tags = ', '.join(malwarebazaar_report.get('tags', [])) if malwarebazaar_report.get('tags') else 'N/A'
-                        filename = malwarebazaar_report.get("file_name", "N/A")
-                
-                        if country != "N/A" or downloads > 0:
-                            malicious_count += 1
-                        score_breakdown.append(f"MalwareBazaar:\n  Country={country}\n  Downloads={downloads}\n  Filename={filename}\n  Uploads={uploads}\n  Delivery Method={delivery_method}\n  Tags={tags}")
-                        total_sources += 1
-                        total_score += downloads
-                    else:
-                        score_breakdown.append("MalwareBazaar: No data available")
-    
-                # AlienVault parsing for hashes
-                if 'AlienVault' in reports:
-                    alienvault_report = reports.get("AlienVault", {})
-                    if isinstance(alienvault_report, dict):
-                        pulses = alienvault_report.get("pulse_count", 0)
-                        malware_families = alienvault_report.get("malware_families", 0)
-                        total_sources += 1
-                        if pulses + malware_families > 0:
-                            malicious_count += 1
-                        score_breakdown.append(f"AlienVault:\n  Pulses={pulses}\n  Malware Families={malware_families}")
-                    else:
-                        score_breakdown.append("AlienVault: No data available")
-    
-                # Metadefender parsing for hashes
-                if 'MetaDefender' in reports:
-                    metadefender_report = reports.get("MetaDefender", {})
-                    if isinstance(metadefender_report, dict):
-                        detected_by = metadefender_report.get('detected_by', 0) or 0
-                        total_score += detected_by * 3
-                        score_breakdown.append(f"MetaDefender:\n  Detected By={detected_by}")
-                    else:
-                        score_breakdown.append("MetaDefender: No data available")
-    
-    
-                # Hybrid Analysis parsing
-                if 'Hybrid-Analysis' in reports:
-                    hybrid_analysis_report = reports.get("Hybrid-Analysis", {})
-                    
-                    # Handle list case
-                    if isinstance(hybrid_analysis_report, list) and hybrid_analysis_report:
-                        hybrid_analysis_report = hybrid_analysis_report[0]
-                    
-                    # Handle dictionary case
-                    if isinstance(hybrid_analysis_report, dict):
-                        # Extract relevant fields
-                        file_name = hybrid_analysis_report.get("submit_name", hybrid_analysis_report.get("file_name", "N/A"))
-                        threat_score = hybrid_analysis_report.get("threat_score", 0)
-                        verdict = hybrid_analysis_report.get("verdict", "N/A")
-                        classification_tags = ', '.join(hybrid_analysis_report.get("classification_tags", [])) if hybrid_analysis_report.get("classification_tags") else "None"
-                        vx_family = hybrid_analysis_report.get("vx_family", "N/A")
-                        total_processes = hybrid_analysis_report.get("total_processes", 0)
-                        total_network_connections = hybrid_analysis_report.get("total_network_connections", 0)
-                
-                        # Handle MITRE ATT&CK data
-                        mitre_attcks = hybrid_analysis_report.get("mitre_attcks", [])
-                        mitre_attcks_str = ', '.join(
-                            [f"{attack.get('tactic', 'N/A')} - {attack.get('technique', 'N/A')} (ID: {attack.get('attck_id', 'N/A')})" for attack in mitre_attcks]
-                        ) if isinstance(mitre_attcks, list) else "None"
-                
-                        # Calculate and add score
-                        ha_score = threat_score * 3  # Weight threat score by 3
-                        if total_processes > 5:
-                            ha_score += 5  # Bonus for many processes
-                        if len(classification_tags.split(', ')) > 2:
-                            ha_score += 5  # Bonus for multiple classification tags
-                        
-                        total_score += ha_score
-                        
-                        # Append Hybrid-Analysis details to the score breakdown
-                        score_breakdown.append(
-                            f"Hybrid-Analysis:\n"
-                            f"  Verdict: {verdict}\n"
-                            f"  Threat Score: {threat_score}\n"
-                            f"  File Name: {file_name}\n"
-                            f"  Classification Tags: {classification_tags}\n"
-                            f"  Family: {vx_family}\n"
-                            f"  Total Processes: {total_processes}\n"
-                            f"  Total Network Connections: {total_network_connections}\n"
-                            f"  MITRE ATT&CK Tactics: {mitre_attcks_str}\n"
-                            f"  Hybrid Analysis Score Contribution: {ha_score}"
-                        )
-                
-                        # Debugging score contribution
-                        print(f"DEBUG: Calculated HA Score: {ha_score}")
-                        print(f"DEBUG: Updated Total Score After Adding HA Score: {total_score}")
-                    else:
-                        score_breakdown.append("Hybrid Analysis: No data available")
-    
-            elif ioc_type == "cve":
 
-                # Parse MITRE report for CVEs
-                if ioc_type == "cve" and "MITRE" in reports:
-                    mitre_report = reports["MITRE"]
-                    if isinstance(mitre_report, dict):
-                        score_breakdown.append("MITRE CVE Report:")
-                        cve_id = mitre_report.get("cve_id", "N/A")
-                        cvss_v3_1 = mitre_report.get("cvss_v3_1", {})
-            
-                        # CVSS score from MITRE data
-                        cvss_score = cvss_v3_1.get("baseScore", "N/A")
-                        if isinstance(cvss_score, (int, float)):
-                            total_score += cvss_score
-                            malicious_count += 1
-                        severity = cvss_v3_1.get("baseSeverity", "N/A")
-            
-                        score_breakdown.append(f"  CVE: {cve_id}, CVSS Score: {cvss_score}, Severity: {severity}")
-            
-                        # Include additional relevant MITRE data that may influence the score or context
-                        affected_products = mitre_report.get("affected_products", [])
-                        for product in affected_products:
-                            score_breakdown.append(f"    - Product: {product.get('product', 'N/A')}, Vendor: {product.get('vendor', 'N/A')}")
-            
-                        adp_info = mitre_report.get("adp_info", [])
-                        for adp in adp_info:
-                            title = adp.get("title", "N/A")
-                            score_breakdown.append(f"  ADP Information: {title}")
-                            for timeline_event in adp.get("timeline", []):
-                                event_time = timeline_event.get("time", "N/A")
-                                description = timeline_event.get("description", "N/A")
-                                score_breakdown.append(f"    - Event Time: {event_time}, Description: {description}")
-
-                
-                if 'Shodan' in reports:
-                    shodan_report = reports.get("Shodan", {})
-                
-                    if isinstance(shodan_report, dict):
-                        cve_results = shodan_report.get("matches", [])
-                    
-                        # Extract facets for reporting
-                        facets = shodan_report.get("facets", {})
-                        if facets:
-                            score_breakdown.append("Shodan CVE Facet Information:")
-                            for key, values in facets.items():
-                                if isinstance(values, list) and values:
-                                    # Extract the first facet item for reporting purposes
-                                    facet_value = values[0]
-                                    value_name = facet_value.get("value", "Unknown")
-                                    count = facet_value.get("count", 0)
-                                    score_breakdown.append(f"  {key.capitalize()}: {value_name} (Count: {count})")
-                    
-                        # Process CVE results
-                        if isinstance(cve_results, list) and cve_results:
-                            score_breakdown.append("Shodan CVE Report:\n  Found CVE entries.")
-                    
-                            for match in cve_results:
-                                if isinstance(match, dict):
-                                    vulns = match.get('vulns', {})  # Access 'vulns' inside each 'match'
-                    
-                                    if isinstance(vulns, dict):
-                                        for cve_id, details in vulns.items():  # Iterate over CVEs in 'vulns'
-                                            if isinstance(details, dict):
-                                                cvss_score = details.get('cvss', 'N/A')
-                    
-                                                # Append CVE details without adding to total score
-                                                if isinstance(cvss_score, (int, float)):
-                                                    score_breakdown.append(f"  CVE: {cve_id}, CVSS Score: {cvss_score}")
-                                                else:
-                                                    score_breakdown.append(f"  CVE: {cve_id}, CVSS Score: Not Available")
-                                            else:
-                                                score_breakdown.append(f"Invalid format for CVE {cve_id}. Expected a dictionary.")
-                                    else:
-                                        score_breakdown.append("Invalid 'vulns' format, expected a dictionary.")
-                                else:
-                                    score_breakdown.append("Invalid match format: Expected a dictionary")
-                        else:
-                            score_breakdown.append("Shodan CVE Report: No CVSS scores found or invalid data format")
-                    else:
-                        score_breakdown.append("Shodan CVE Report: No valid report data")
-    
-                # Censys parsing for CVEs and Score Breakdown
-                if ioc_type == "cve" and 'Censys' in reports:
-                    censys_report = reports['Censys']
-                    
-                    if isinstance(censys_report, list):
-                        score_breakdown.append("Censys CVE Report:\n  Found CVE entries.")
-                        
-                        for result in censys_report:
-                            ip = result.get("IP", "N/A")
-                            services = result.get("Services", [])
-                            cves = result.get("CVEs", [])
-                            
-                            # Collect CVE scores for each service without affecting the total score
-                            for service in services:
-                                cve_list = result.get("CVEs", [])
-                                for cve in cve_list:
-                                    cve_id = cve.get("CVE ID", "N/A")
-                                    cvss_score = cve.get("CVSS", "N/A")  # Use 'N/A' if no CVSS score is found
-                                    score_breakdown.append(f"  IP: {ip}, CVE: {cve_id}, CVSS Score: {cvss_score}")
-                                    
-                    else:
-                        score_breakdown.append("Censys CVE Report: No valid CVE data found")
-
-        
-
-            # Determine verdict based on raw total_score thresholds
-            if total_score == 0:
-                verdict = "Not Malicious"
-            elif 1 <= total_score <= 50:
-                verdict = "Not Malicious"
-            elif 51 <= total_score <= 100:
-                verdict = "Suspicious"
-            elif 100 <= total_score <= 150:
-                verdict = "Probably Malicious"
-            else:
-                verdict = "Malicious"
-            
-            # Additional handling based on IOC type
-            if ioc_type == "ip" and trusted_provider_found:
-                verdict = "Not Malicious"
-                score_breakdown.append(f"Note: IP belongs to trusted provider ({trusted_provider_found}). Verdict set to 'Not Malicious'.")
-            elif ioc_type in ["url", "domain"]:
-                if total_score == 0 and malicious_count == 0:
-                    verdict = "Not Malicious"
-                elif malicious_count >= high_malicious_count_threshold:
-                    verdict = "Malicious" if recent_analysis else "Probably Malicious"
-                # elif total_score > 0 and ("trackers" in tags or "external-resources" in tags):
-                #     verdict = "Suspicious"
-            
-            # Output final score and verdict in the breakdown
-            verdict_str = f"Verdict: {verdict}"
-            total_score_str = f"Total Score: {total_score}\n"
-                        
-            # Add verdict and score to the breakdown
-            score_breakdown.insert(0, verdict_str)
-            score_breakdown.insert(1, total_score_str)
-            breakdown_str = "\n".join(score_breakdown)
-            
-            return total_score, breakdown_str, verdict
-        
-    except Exception as e:
-        print(f"ERROR: Exception encountered during score calculation: {str(e)}")
-        return 0, f"Error during score calculation: {str(e)}", "Unknown"
-
-def extract_borealis_info(borealis_report):
-    breakdown = []
-    total_score = 0
-    safebrowsing_score = 0
-
-    # Define vendor weights for scoring
-    vendor_weights = {
-        "SPUR": 1,
-        "STONEWALL": 1,
-        "AUWL": 1,
-        "ALPHABETSOUP": 1,
-        "TOP1MILLION": 1,
-        "SAFEBROWSING": 1,
-    }
-
-    # Nested function to calculate vendor score with recentness check
-    def calculate_vendor_score(vendor, score):
-        weight_factor = vendor_weights.get(vendor, 0)
-        return score * weight_factor
-
-    # SafeBrowsing
-    safebrowsing_info = borealis_report.get("modules", {}).get("SAFEBROWSING", [])
-    if safebrowsing_info and isinstance(safebrowsing_info, list):
-        breakdown.append("SAFEBROWSING:")
-        for safebrowsing_entry in safebrowsing_info:
-            decision = safebrowsing_entry.get("decision", "N/A")
-            breakdown.append(f"  Decision: {decision}")
-            if decision.lower() != "safe":
-                safebrowsing_score = calculate_vendor_score("SAFEBROWSING", 1)
-                total_score += safebrowsing_score
-                breakdown.append(f"  Google SafeBrowsing decision is NOT Safe, added {safebrowsing_score} to score.")
-            else:
-                breakdown.append(f"  Google SafeBrowsing decision is Safe, added {safebrowsing_score} to score.")
-
-    # Spur Section
-    spur_info = borealis_report.get("modules", {}).get("SPUR", [])
-    if spur_info and isinstance(spur_info, list):
-        breakdown.append("SPUR:")
-        for spur_entry in spur_info:
-            asn = spur_entry.get("as", {}).get("number", "N/A")
-            org = spur_entry.get("as", {}).get("Organization", "N/A")
-            tunnels = spur_entry.get("tunnels", [])
-            for tunnel in tunnels:
-                tunnel_type = tunnel.get("type", "N/A")
-                operator = tunnel.get("operator", "N/A")
-                anonymous = tunnel.get("anonymous", "N/A")
-                breakdown.append(f"  ASN: {asn}\n  Organization: {org}\n  Tunnel Type: {tunnel_type}\n  Operator: {operator}\n  Anonymous: {anonymous}")
-    else:
-        breakdown.append("SPUR Info: No relevant data available.")
-
-    # Stonewall Section
-    stonewall_info = borealis_report.get("modules", {}).get("STONEWALL", {})
-    if stonewall_info and isinstance(stonewall_info, dict):
-        decision = stonewall_info.get("decision", "N/A")
-        reason = stonewall_info.get("reason", "N/A")
-        filename = stonewall_info.get("filename", "N/A")
-        breakdown.append("Stonewall:")
-        breakdown.append(f"  Decision: {decision}")
-        breakdown.append(f"  Reason: {reason}")
-        breakdown.append(f"  Filename: {filename}")
-        if decision.lower() == "approved":
-            stonewall_score = calculate_vendor_score("STONEWALL", 1)
-            total_score += stonewall_score
-            breakdown.append(f"  * Stonewall approved for blocking, added {stonewall_score} to score.")
-    else:
-        breakdown.append("Stonewall: No relevant data available.")
-
-    # AUWL Section
-    if borealis_report and "AUWL" in borealis_report.get("modules", {}):
-        auwl_entries = borealis_report["modules"]["AUWL"]
-        if isinstance(auwl_entries, list):
-            for entry in auwl_entries:
-                cluster_name = entry.get("clusterName", "N/A")
-                cluster_category = entry.get("clusterCategory", "N/A")
-                url = entry.get("url", "N/A")
-                breakdown.append(f"AUWL:\n  Cluster Name: {cluster_name}\n  Cluster Category: {cluster_category}\n  URL: {url}")
-
-                # Check for malicious terms in the clusterCategory
-                if cluster_category.lower() in ['phishing', 'malware', 'suspicious']:
-                    auwl_score = calculate_vendor_score("AUWL", 1)
-                    total_score += auwl_score
-                    breakdown.append(f"  * AUWL category '{cluster_category}' indicates malicious activity. Added {auwl_score} to score.")
-        else:
-            breakdown.append("AUWL: No relevant data available.")
-
-    # AlphabetSoup Section (DGA detection)
-    alphabetsoup_info = borealis_report.get("modules", {}).get("ALPHABETSOUP", {})
-    if alphabetsoup_info and isinstance(alphabetsoup_info, dict):
-        dga_detected = alphabetsoup_info.get("isDGA", False)
-        if dga_detected:
-            alphabetsoup_score = calculate_vendor_score("ALPHABETSOUP", 1)
-            total_score += alphabetsoup_score
-            breakdown.append(f"AlphabetSoup: DGA Detected - Score Contribution: {alphabetsoup_score}")
-        else:
-            breakdown.append("AlphabetSoup: No DGA detected.")
-    else:
-        breakdown.append("AlphabetSoup: No relevant data available.")
-
-    # Top1M Section (Majestic, Tranco, Cisco block detection)
-    top1m_info = borealis_report.get("modules", {}).get("TOP1MILLION", [])
-    if top1m_info and isinstance(top1m_info, list):
-        blocked_by = []
-        for entry in top1m_info:
-            list_name = entry.get("listName", "Unknown")
-            in_list = entry.get("inList", False)
-            if in_list:
-                blocked_by.append(list_name)
-                rank = entry.get("rank", "N/A")
-                breakdown.append(f"{list_name.capitalize()} list - In List: {in_list}, Rank: {rank}")
-        
-        if blocked_by:
-            top1m_score = calculate_vendor_score("TOP1MILLION", len(blocked_by))
-            total_score += top1m_score
-            breakdown.append(f"Top1M: Blocked by {', '.join(blocked_by)} - Score Contribution: {top1m_score}")
-        else:
-            breakdown.append("Top1M: Not blocked by Majestic, Tranco, or Cisco")
-    else:
-        breakdown.append("Top1M: No relevant data found.")
-
-    return "\n".join(breakdown), total_score
-
-
-def process_categories_field(categories):
-    """
-    Processes the 'categories' field and returns a formatted string.
-    Handles both dictionary and string types, and defaults to 'N/A' if empty or unexpected.
-    """
-    if isinstance(categories, dict):
-        
-        return ', '.join([f"{source}: {category}" for source, category in categories.items()])
-    elif isinstance(categories, str):
-        return categories
-    elif categories is None:
-        return 'N/A'
-    else:
-        return 'N/A'  # Fallback for unexpected types
-
-def process_dynamic_field(field, default='N/A'):
-    if isinstance(field, dict):
-        # Convert dictionary to string in a readable format
-        return ', '.join([f"{key}: {value}" for key, value in field.items()])
-    elif isinstance(field, list):
-        # Ensure all list items are strings
-        return ', '.join([str(item) for item in field])
-    elif isinstance(field, str):
-        return field
-    return default
-
-
-def extract_av_vendors(vt_report):
-    av_vendors = {'malicious': [], 'suspicious': []}
-    if vt_report and 'data' in vt_report and 'attributes' in vt_report['data']:
-        scans = vt_report['data']['attributes'].get('last_analysis_results', {})
-        for vendor, result in scans.items():
-            if result['category'] == 'malicious':
-                av_vendors['malicious'].append(vendor)
-            elif result['category'] == 'suspicious':
-                av_vendors['suspicious'].append(vendor)
-    return av_vendors
-
-
-def is_malicious_last_14_days(report_data, ioc_type):
-    total_score, breakdown, verdict = calculate_total_malicious_score(report_data, ioc_type)
-    threshold_value = 200  # Define a threshold for malicious detection
-    return total_score >= threshold_value, breakdown
-
-
-def format_alienvault_report(alienvault_report):
-    formatted_report = "AlienVault Report:\n"
-
-    if isinstance(alienvault_report, dict):
-
-        def add_field_to_report(field_name, field_value):
-            nonlocal formatted_report
-            if field_value or field_value == 0:
-                formatted_report += f"  - {field_name}: {field_value}\n"
-
-        def safe_join(separator, items):
-            def stringify(item):
-                if isinstance(item, dict):
-                    # Extract relevant field from the dictionary or convert to string
-                    return item.get('display_name', str(item))
-                return str(item)
-            return separator.join(stringify(item) for item in items)
-
-        # Basic Indicator Information
-        add_field_to_report("Indicator", sanitize_and_defang(alienvault_report.get('indicator', 'N/A')))
-        add_field_to_report("Reputation", alienvault_report.get('reputation', 'N/A'))
-        add_field_to_report("Type", alienvault_report.get('type', 'N/A'))
-        add_field_to_report("Type Title", alienvault_report.get('type_title', 'N/A'))
-        add_field_to_report("ASN", alienvault_report.get('asn', 'N/A'))
-        add_field_to_report("Country", alienvault_report.get('country_name', 'N/A'))
-        add_field_to_report("Latitude", alienvault_report.get('latitude', 'N/A'))
-        add_field_to_report("Longitude", alienvault_report.get('longitude', 'N/A'))
-        add_field_to_report("Accuracy Radius", alienvault_report.get('accuracy_radius', 'N/A'))
-        add_field_to_report("Postal Code", alienvault_report.get('postal_code', 'N/A'))
-        add_field_to_report("DMA Code", alienvault_report.get('dma_code', 'N/A'))
-        add_field_to_report("Area Code", alienvault_report.get('area_code', 'N/A'))
-        add_field_to_report("Flag URL", alienvault_report.get('flag_url', 'N/A'))
-        add_field_to_report("Flag Title", alienvault_report.get('flag_title', 'N/A'))
-
-        # Expiration Information
-        add_field_to_report("Expiration", alienvault_report.get('expiration', 'N/A'))
-        add_field_to_report("Is Active", alienvault_report.get('is_active', 'N/A'))
-
-        # Malware Families and Adversary
-        malware_families = alienvault_report.get('malware_families', [])
-        if malware_families:
-            #print(f"DEBUG: Joining fields, current values: {malware_families}")
-            add_field_to_report("Malware Families", safe_join(', ', malware_families))
-
-        related_info = alienvault_report.get('related', {})
-        if related_info:
-            add_field_to_report("Related Adversary", related_info.get('adversary', 'N/A'))
-            #print(f"DEBUG: Joining fields, current values: {related_info}")
-            add_field_to_report("Related Industries", safe_join(', ', related_info.get('industries', [])))
-
-        # Sections and Pulse Information
-        #print(f"DEBUG: Joining fields, current values: {alienvault_report}")
-        add_field_to_report("Sections", safe_join(', ', alienvault_report.get('sections', [])))
-        
-        pulse_info = alienvault_report.get('pulse_info', {})
-        if pulse_info:
-            add_field_to_report("Pulse Count", pulse_info.get('count', 'N/A'))
-            if 'pulses' in pulse_info:
-                add_field_to_report("Top 3 Pulses", "")
-                for i, pulse in enumerate(pulse_info['pulses'][:3], start=1):
-                    add_field_to_report(f"  Pulse Name", pulse.get('name', 'N/A'))
-                    add_field_to_report(f"  Adversary", pulse.get('adversary', 'N/A'))
-                    #print(f"DEBUG: Joining fields, current values: {pulse_info}")
-                    add_field_to_report(f"  Malware Families", safe_join(', ', pulse.get('malware_families', [])))
-                    #print(f"DEBUG: Joining fields, current values: {pulse.get('industries', [])}")
-                    add_field_to_report(f"  Industries", safe_join(', ', pulse.get('industries', [])))
-
-        return formatted_report.strip()
-    else:
-        return "Invalid format for AlienVault report"
-
-
-def process_individual_ioc_file(file_contents, category='auto'):
-    cleaned_content = clean_input(file_contents)
-    
-    # Parsing IOCs from the cleaned content
-    iocs = parse_bulk_iocs(cleaned_content)
-    
-    if category == 'auto':
-        return iocs  # Auto-detect and return all types of IOCs
-    else:
-        return {category: cleaned_content.splitlines()}  # Return based on selected category
-
-    
-def extract_censys_data_analysis(censys_report):
-    if censys_report:
-        censys_data = (
-            f"  Ip: {sanitize_and_defang(censys_report.get('ip', 'N/A'))}\n"
-            f"  Asn: {censys_report.get('asn', 'N/A')}\n"
-            f"  Organization: {censys_report.get('organization', 'N/A')}\n"
-            f"  Country: {censys_report.get('country', 'N/A')}\n"
-            f"  City: {censys_report.get('city', 'N/A')}\n"
-            f"  Latitude: {censys_report.get('latitude', 'N/A')}\n"
-            f"  Longitude: {censys_report.get('longitude', 'N/A')}\n"
-            f"  Operating_system: {censys_report.get('operating_system', 'N/A')}\n"
-            f"  Services:"
-        )
-        for service in censys_report.get('services', []):
-            censys_data += (
-                f"\n    - Port: {service.get('port', 'N/A')}, Service Name: {service.get('service_name', 'N/A')}, Observed At: {service.get('observed_at', 'N/A')}"
-            )
-        censys_data += f"\nLast_updated: {censys_report.get('last_updated', 'N/A')}"
-        return censys_data
-    return "No relevant information available"
-
-
-
-def analysis(selected_category, output_file_path=None, progress_bar=None, status_output=None, selected_country=None, port=None, debug=False):
-    print(f"DEBUG: analysis function started with selected_category = {selected_category}")
-    print(f"DEBUG: selected_country passed to analysis = {selected_country}")
-    individual_combined_reports = {}
-    product_port_combination_searched = False
-    ioc_scores = []
-    tags = 'N/A'
-    registrar = 'N/A'
-    creation_date = 'N/A'
-    categories_str = 'N/A'
-    popularity_ranks = 'N/A'
-    popularity_str = 'N/A'
-    categories = 'N/A'
-    vt_report = None
-    
-
-    # Ensure selected_category is not None
-    if selected_category is None:
-        print("DEBUG: selected_category is None")
-        return "Error: selected_category is None"
-
-
-    # Handle category-specific processing and ensure all IOC types are present
-    selected_category.setdefault('ips', [])
-    selected_category.setdefault('urls', [])
-    selected_category.setdefault('domains', [])  # Add this line to handle domains
-    selected_category.setdefault('hashes', [])
-    selected_category.setdefault('cves', [])
-    selected_category.setdefault('orgs', [])
-    selected_category.setdefault('ports', [])
-    selected_category.setdefault('products', [])
-    selected_category.setdefault('product_port_combinations', [])
-
-    print(f"DEBUG: Updated selected_category = {selected_category}")
-
-    # Calculate total API calls based on the number of IOCs in each category
-    total_api_calls = (
-        len(selected_category['ips']) * 13  # 10 API calls per IP
-        + len(selected_category['urls']) * 12  # 9 API calls per URL
-        + len(selected_category['domains']) * 11  # 9 API calls per domain (if treated separately from URLs)
-        + len(selected_category['hashes']) * 5  # 4 API calls per hash
-        + len(selected_category['cves']) * 3
-        + len(selected_category['orgs']) * 2
-        + len(selected_category['ports']) * 3
-        + len(selected_category['products']) * 3
-        + len(selected_category['product_port_combinations']) * 3
-    )
-
-    # Initialize the progress bar
-    if progress_bar:
-        progress_bar.max = total_api_calls
-        progress_bar.value = 0  # Reset progress to 0
-
-    for category, entries in selected_category.items():
-        if entries:  # Only process if there are entries in the category
-            print(f"Processing {category.upper()}...")
-            individual_combined_reports[category] = []
-            ioc_type = category.rstrip('s')  # Converts 'ips' to 'ip', 'urls' to 'url', etc.
-            
-            
-            # # Calculate dynamic progress step based on the total number of reports
-            # progress_step = 100 / total_reports if total_reports > 0 else 1
-    
-            for count, entry in enumerate(entries, start=1):
-                breakdown = []
-                if status_output:
-                    clear_output(wait=True)
-                    display(HTML(f'<b>Scanning {category.capitalize()} [{count}/{len(entries)}]: {sanitize_and_defang(entry)}</b>'))
-                    display(progress_bar)
-    
-                print(f"\nScanning {category.capitalize()} [{count}/{len(entries)}]: {sanitize_and_defang(entry)}")
-
-                #combined_report = f"Analysis for {sanitize_and_defang(entry)} ({category.upper()}):\n\n"
-                combined_report = ""
-                
-                if category == "ips":
-                    trusted_provider_found = []
-                    report_vt_ip = None
-                    report_abuseipdb = None
-                    report_shodan = None
-                    report_alienvault = None
-                    report_ipqualityscore = None
-                    report_greynoise = None
-                    report_censys = None
-                    report_binaryedge_ip = None
-                    report_metadefender_ip = None
-                    report_hybrid_analysis_ip = None
-
-                    
-                    report_vt_ip = get_ip_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_abuseipdb = get_abuseipdb_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_shodan = get_shodan_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_greynoise = get_greynoise_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_censys = get_censys_data(censys_api_key, censys_secret, entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_binaryedge_ip = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_metadefender_ip = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-
-                    report_hybrid_analysis_ip = search_hybrid_analysis_by_term(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                # Borealis Report
-                
-                    borealis_report = request_borealis(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                            progress_bar.value += 1
-                    
-
-
-                    # List of reports to check for trusted provider detection
-                    all_reports = [
-                        ("VirusTotal", report_vt_ip),
-                        ("AbuseIPDB", report_abuseipdb),
-                        ("IPQualityScore", report_ipqualityscore),
-                        ("AlienVault", report_alienvault)
-                    ]
-
-                    
-
-                    # Iterate over each report to check for trusted provider
-                    for vendor, report in all_reports:
-                        if report:
-                            #print(f"DEBUG: Checking trusted provider in {vendor} report")
-
-                            # Handle specific logic for each vendor
-                            if vendor == "VirusTotal":
-                                asn = report.get("data", {}).get("attributes", {}).get("asn", "")
-                                organization = report.get("data", {}).get("attributes", {}).get("organization", "")
-                                indicator = report.get("data", {}).get("attributes", {}).get("indicator", "")
-
-                                provider = check_trusted_provider(asn, organization, "")
-                                if provider:
-                                    trusted_provider_found = provider
-                                    breakdown.append(f"VirusTotal Trusted Provider Detected: {trusted_provider_found}")
-                                    #print(f"DEBUG: Trusted provider detected from VirusTotal: {trusted_provider_found}")
-
-                            elif vendor == "IPQualityScore":
-                                # Check if report is a dictionary
-                                if isinstance(report, dict):
-                                    asn = report.get("ASN", "")
-                                    isp = report.get("ISP", "")
-                                    #indicator = entry  # IP or domain entry itself as the indicator
-                                else:
-                                    #print(f"DEBUG: IPQualityScore report is not a dictionary. Report content: {report}")
-                                    asn = ""  # Default to empty string
-                                    isp = ""
-                                    #indicator = entry
-
-                            elif vendor == "AlienVault":
-                                if isinstance(report, dict):
-                                    asn = report.get("ASN", "")
-                                    organization = report.get("organization", "")
-                                    isp = report.get("isp", "")
-                                else:
-                                    # Handle the case when report is not a dict (it's a string or other type)
-                                    print(f"DEBUG: AlienVault report is not a dictionary. Report content: {report}")
-                                    asn = ""
-                                    organization = ""
-                                    isp = ""
-
-
-                    # Calculate verdict and score breakdown
-                    total_score, score_breakdown, verdict = calculate_total_malicious_score(
-                        {
-                            "VirusTotal": report_vt_ip,
-                            "AbuseIPDB": report_abuseipdb,
-                            "IPQualityScore": report_ipqualityscore,
-                            "GreyNoise": report_greynoise,
-                            "AlienVault": report_alienvault,
-                            "BinaryEdge": report_binaryedge_ip,
-                            "MetaDefender": report_metadefender_ip,
-                            "Hybrid-Analysis": report_hybrid_analysis_ip,
-                        },
-                        borealis_report,
-                        ioc_type="ip"
-                    )
-
-                    #print(f"DEBUG: trusted_provider_found before appending to verdict = {trusted_provider_found}")
-
-                    if trusted_provider_found:
-                        combined_report += f"Verdict: {verdict} (Score: {total_score}) (Belongs to {trusted_provider_found})\n"
-                        combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
-                    else:
-                        combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
-                        combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
-                 
-                                        
-                        # VirusTotal Report
-                    if report_vt_ip and report_vt_ip != f"Failed to fetch VirusTotal IP report for {entry}.":
-                        malicious_score = report_vt_ip['data']['attributes']['last_analysis_stats']['malicious']
-                        suspicious_score = report_vt_ip['data']['attributes']['last_analysis_stats']['suspicious']
-                        last_analysis_date = report_vt_ip.get('data', {}).get('attributes', {}).get('last_analysis_date', None)
-                        if last_analysis_date:
-                            last_analysis_date_formatted = datetime.utcfromtimestamp(last_analysis_date).strftime('%Y-%m-%d %H:%M:%S')
-                        else:
-                            last_analysis_date_formatted = "N/A"
-                        av_vendors = extract_av_vendors(report_vt_ip)
-                        crowdsourced_context = report_vt_ip['data']['attributes'].get('crowdsourced_context', 'N/A')
-                        crowdsourced_context_formatted = format_crowdsourced_context(crowdsourced_context)
-                    
-                        tags = ', '.join(report_vt_ip['data']['attributes'].get('tags', [])) if report_vt_ip['data']['attributes'].get('tags') else 'N/A'
-                        categories = report_vt_ip.get('data', {}).get('attributes', {}).get('categories', None)
-                        categories_str = process_dynamic_field(categories)
-                        popularity_ranks = report_vt_ip.get('data', {}).get('attributes', {}).get('popularity_ranks', {})
-                        popularity_str = ', '.join([f"{source}: {info.get('rank')}" for source, info in popularity_ranks.items()])
-                        registrar = report_vt_ip.get('data', {}).get('attributes', {}).get('registrar', 'N/A')
-                        creation_date = report_vt_ip.get('data', {}).get('attributes', {}).get('creation_date', 'N/A')
-                        if creation_date != 'N/A':
-                            creation_date = datetime.utcfromtimestamp(creation_date).strftime('%Y-%m-%d %H:%M:%S')
-                    
-                        # Extract Passive DNS data
-                        passive_dns_data = report_vt_ip.get("passive_dns", [])
-                        if passive_dns_data:
-                            passive_dns_str = "\n".join([
-                                f"    - Hostname: {sanitize_and_defang(item)['hostname']}\n     - Resolved Date: {item['resolved_date']}"
-                                for item in passive_dns_data
-                            ])
-                            passive_dns_formatted = f"  - Passive DNS Data:\n{passive_dns_str}\n"
-                        else:
-                            passive_dns_formatted = "  - Passive DNS Data: N/A\n"
-                    
                         # Extract Communicating Files data
                         communicating_files_data = report_vt_ip.get("communicating_files", [])
                         if communicating_files_data:
@@ -2366,8 +1414,26 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             f"  - Country Code: {country_code}\n"
                             f"  - ISP: {isp}\n"
                             f"  - Domain: {sanitize_and_defang(domain)}\n"
-                            f"  - Last Seen: {last_analysis_date}\n\n"
+                            f"  - Last Seen: {last_analysis_date}\n"
                         )
+                        # Include top comments if available
+                        top_comments = report_abuseipdb.get("topComments", [])
+                        if top_comments:
+                            combined_report += "  - Top Comments:\n"
+                            for idx, comment_data in enumerate(top_comments, start=1):
+                                comment_text = comment_data.get("comment", "No comment text")
+                                reported_at = comment_data.get("reportedAt", "N/A")
+                                reporter_id = comment_data.get("reporterId", "Anonymous")
+                                
+                                combined_report += (
+                                    f"    - Comment: {comment_text}\n"
+                                    f"       - Reported By: {reporter_id}\n"
+                                    f"       - Reported At: {reported_at}\n"
+                                )
+                        else:
+                            combined_report += "  - Top Comments: None available\n"
+
+                        combined_report += "\n"
                     else:
                         combined_report += "AbuseIPDB Report:\nN/A\n\n"
 
@@ -2769,7 +1835,9 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     if report_urlscan and isinstance(report_urlscan, dict):
                         if not report_urlscan.get('Resolving', True):
                             combined_report += "URLScan Report:\n  - The domain isn't resolving.\n\n"
-                            combined_report += "Verdict: Not Malicious (Domain Not Resolving)\n\n"
+
+                            #combined_report += "Verdict: Not Malicious (Domain Not Resolving)\n\n"
+
                             # Do not skip; include a placeholder report
                         else:
                             combined_report += "URLScan Report:\n"
@@ -2880,12 +1948,14 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             report_urlscan = None
 
                 
-                    report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+
+                    report_binaryedge_dom = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
                     if progress_bar:
                         progress_bar.value += 1
                 
                 
-                    report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+
+                    report_metadefender_dom = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar
                     if progress_bar:
                         progress_bar.value += 1
                     
@@ -2984,6 +2054,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         provider_list = ', '.join(trusted_provider_found)
                         combined_report += f"Verdict: {verdict} (Score: {total_score}) (Hosted on: {provider_list})\n"
                         combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
+
                     else:
                         combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
                         combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
@@ -3058,8 +2129,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             if passive_dns_data:
                                 #print(f"DEBUG: Retrieved passive DNS data: {json.dumps(passive_dns_data, indent=4)}")
                                 passive_dns_str = "\n".join([
-                                    f"    - IP Address: {sanitize_and_defang(entry)['ip_address']}\n    - Resolved Date: {entry['resolved_date']}\n"
-                                    f"    - IP AV Detections: Malicious: {entry['ip_av_detections']['malicious']}, "
+                                    f"    - IP Address: {sanitize_and_defang(entry)['ip_address']}\n      - Resolved Date: {entry['resolved_date']}\n"
+                                    f"      - IP AV Detections: Malicious: {entry['ip_av_detections']['malicious']}, "
                                     f"Suspicious: {entry['ip_av_detections']['suspicious']}, "
                                     f"Undetected: {entry['ip_av_detections']['undetected']}, "
                                     f"Harmless: {entry['ip_av_detections']['harmless']}"
@@ -3073,7 +2144,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             if whois_raw and whois_raw != 'N/A':
                                 whois_lines = whois_raw.splitlines()  # Split the WHOIS data into lines
                                 whois_formatted = "\n".join([f"    - {line}" for line in whois_lines])  # Indent each line
-                                vt_result += f"  - Whois:\n{whois_formatted}\n"
+                                vt_result += f"  - Whois:\n{sanitize_and_defang(whois_formatted)}\n"
                             else:
                                 vt_result += "  - Whois: N/A\n"
                     
@@ -3096,7 +2167,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                     f"    - Type: {record.get('type')}, TTL: {record.get('ttl')}, Value: {record.get('value')}"
                                     for record in last_dns_records
                                 ])
-                                vt_result += f"  - Last DNS Records:\n{dns_records_str}\n"
+                                vt_result += f"  - Last DNS Records:\n{sanitize_and_defang(dns_records_str)}\n"
                     
                             # Include crowdsourced_context if available
                             crowdsourced_context = attributes.get('crowdsourced_context', [])
@@ -3144,15 +2215,18 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         combined_report += "IPQualityScore Report:\nN/A\n\n"
                 
                     # BinaryEdge Report
-                    if report_binaryedge_url and isinstance(report_binaryedge_dom, dict):
-                        parsed_binaryedge_info = parse_binaryedge_report(report_binaryedge_url, "domain")
+
+                    if report_binaryedge_dom and isinstance(report_binaryedge_dom, dict):
+                        parsed_binaryedge_info = parse_binaryedge_report(report_binaryedge_dom, "domain")
+
                         combined_report += f"BinaryEdge Report:\n{parsed_binaryedge_info}\n\n"
                     else:
                         combined_report += "BinaryEdge Report:\n  - No relevant data found.\n\n"
                 
                     # MetaDefender Report
-                    if report_metadefender_url and isinstance(report_metadefender_dom, str):
-                        combined_report += f"{report_metadefender_url}\n\n"
+
+                    if report_metadefender_dom and isinstance(report_metadefender_dom, str):
+                        combined_report += f"{report_metadefender_dom}\n\n"
                     else:
                         combined_report += "Metadefender Report:\n  - No relevant data found.\n\n"
 

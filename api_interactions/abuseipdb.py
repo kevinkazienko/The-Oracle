@@ -13,7 +13,8 @@ def get_abuseipdb_report(ip, status_output=None, progress_bar=None):
     url = f"https://api.abuseipdb.com/api/v2/check"
     params = {
         'ipAddress': ip,
-        'maxAgeInDays': '30'
+        'maxAgeInDays': '14',
+        'verbose': True  # Ensure detailed reports including comments
     }
     headers = {
         'Accept': 'application/json',
@@ -22,15 +23,36 @@ def get_abuseipdb_report(ip, status_output=None, progress_bar=None):
     response = requests.get(url=url, headers=headers, params=params)
 
     if response.status_code == 200:
-        data = response.json()['data']
-        
+        data = response.json().get('data', {})
         if data:
+            # Extracting comments from reports
+            reports = data.get('reports', [])
+            top_comments = []
+            
+            for report in reports:
+                comment = report.get('comment', '').strip()
+                reported_at = report.get('reportedAt', 'N/A')
+                reporter_id = report.get('reporterId', 'Anonymous')
+                
+                if comment:
+                    top_comments.append({
+                        "comment": comment,
+                        "reportedAt": reported_at,
+                        "reporterId": reporter_id
+                    })
+            
+            # Limit to top 10 comments
+            top_comments = top_comments[:10]
+    
             report = {
                 "abuseConfidenceScore": data.get("abuseConfidenceScore", "N/A"),
                 "isTor": data.get("isTor", False),
                 "lastSeen": data.get("lastReportedAt", "N/A"),
                 "totalReports": data.get("totalReports", "N/A"),
-                "domain": data.get("domain", "N/A")
+                "domain": data.get("domain", "N/A"),
+                "country_code": data.get("countryCode", "N/A"),
+                "isp": data.get("isp", "N/A"),
+                "topComments": top_comments  # Include structured comments
             }
             return report
         else:
