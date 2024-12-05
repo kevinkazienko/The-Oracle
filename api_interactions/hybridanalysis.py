@@ -379,7 +379,7 @@ def submit_url_to_hybrid_analysis(url, ioc_type, status_output=None, progress_ba
         return None, None
 
 
-def fetch_hybrid_analysis_report(submission_id, status_output=None, progress_bar=None, timeout=100, poll_interval=15):
+def fetch_hybrid_analysis_report(submission_id, status_output=None, progress_bar=None, timeout=600, poll_interval=15):
     """
     Polls the /quick-scan/{id} endpoint or fetches the final quick-scan results immediately if completed.
     """
