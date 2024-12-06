@@ -487,6 +487,7 @@ trusted_asn_list = {
     "Microsoft": 8075,
     "Akamai": 21342,
     "Akamai": 20940,
+    "Akamai": 16625,
     "Bell": 577
     #"Shodan": 20473,  # Shodan is trusted but does not count towards malicious score.
 }
@@ -508,9 +509,10 @@ def check_trusted_provider(asn, organization, isp):
         "14618": "Amazon",
         "AS14618 amazon.com inc.": "Amazon",
         "AS577": "Bell",
-        # "AS21342": "Akamai Technologies, Inc.",
-        # "AS20940": "Akamai Technologies, Inc.",
-        # "AS21342 (Akamai International B.V.)": "Akamai Technologies, Inc.",
+        "AS21342": "Akamai Technologies, Inc.",
+        "AS20940": "Akamai Technologies, Inc.",
+        "AS21342 (Akamai International B.V.)": "Akamai Technologies, Inc.",
+        "AS16625": "Akamai Technologies, Inc.",
         # Add other ASNs or organizations as needed
     }
 
@@ -540,8 +542,8 @@ def check_trusted_provider(asn, organization, isp):
         "Google": ["Google", "GOOGLE", "google.com", "google.ca", "GOOGLE-CLOUD-PLATFORM", "google", "AS15169 google llc"],
         "Cloudflare": ["Cloudflare", "CLOUDFLARENET", "AS13335 cloudflare", "cloudflare"],
         "Microsoft": ["Microsoft", "MICROSOFT-CORP"],
-        "Bell": ["Bell Canada", "BACOM", "bell canada", "AS577 bell canada"]
-        # "Akamai Technologies, Inc.": ["akamai", "akamaiedge", "AS21342 (Akamai International B.V.)"],
+        "Bell": ["Bell Canada", "BACOM", "bell canada", "AS577 bell canada"],
+        "Akamai Technologies, Inc.": ["akamai", "akamaiedge", "AS21342 (Akamai International B.V.)", "Akamai Technologies", "AS20940 akamai international b.v."],
         # Add other trusted providers as needed
     }
 
@@ -557,8 +559,8 @@ def check_trusted_provider(asn, organization, isp):
         return "Google"
     elif "microsoft" in organization or "microsoft" in isp:
         return "Microsoft"
-    # elif "Akamai Technologies, Inc." in organization or "Akamai International B.V." in organization or "Akamai" in isp:
-    #     return "Akamai Technologies, Inc."
+    elif "Akamai Technologies, Inc." in organization or "Akamai International B.V." in organization or "Akamai Technologies" in organization or "Akamai Technologies" or "AKAMAI-AS" in organization in isp or "Akamai" in isp or "Akamai Technologies, Inc." in isp:
+        return "Akamai Technologies, Inc."
 
     # Check each provider and its variations
     for provider, variations in trusted_variations.items():
@@ -595,7 +597,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     recent_analysis_weight_boost = 1.2  # Adjust weight by 20% if analysis is recent
     last_analysis_date = None
     # Define the threshold at the top of the script or within the scoring function
-    high_malicious_count_threshold = 3
+    high_malicious_count_threshold = 4
     if not reports or not isinstance(reports, dict):
         # Default fallback values
         return 0, {}, "Not Malicious"
@@ -620,13 +622,13 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
         "IPQualityScore": 1,
         "MalwareBazaar": 1,
         "URLScan": 1,
-        "BinaryEdge": 1,
-        "MetaDefender": 1,
+        "BinaryEdge": .5,
+        "MetaDefender": .5,
         "AUWL": 1,
         "TOP1MILLION": 1,
         "ALPHABETSOUP": 1,
         "STONEWALL": 1,
-        "Hybrid-Analysis": 1,
+        "Hybrid-Analysis": .5,
         "Censys": 1,
         # Adjust weights as necessary for new vendors or specific cases
     }
@@ -3056,12 +3058,12 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                 ])
                                 last_downloaded_file_info = f"Downloaded Files:\n{downloaded_files_str}"
                             else:
-                                last_downloaded_file_info = "No downloaded files found.\n"
+                                last_downloaded_file_info = "No downloaded files found."
                     
                             # Build the report
                             vt_result = (
                                 f"VirusTotal Domain Report:\n"
-                                f"  - IOC: {entry}\n"
+                                f"  - IOC: {sanitize_and_defang(entry)}\n"
                                 f"  - Harmless: {harmless}, Malicious: {malicious}, Suspicious: {suspicious}, Timeout: {timeout}, Undetected: {undetected}\n"
                                 f"  - Malicious Vendors: {', '.join(malicious_vendors) or 'None'}\n"
                                 f"  - Suspicious Vendors: {', '.join(suspicious_vendors) or 'None'}\n"
