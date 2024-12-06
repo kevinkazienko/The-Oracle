@@ -51,6 +51,7 @@ The Oracle is designed for security analysts, researchers and enthusiasts - faci
 - **Search CVE's**: Search for devices vulnerable to CVE's using Shodan's vuln filter [10/25/2024].
 - **Search Organizations**: Search Shodan using the org filter [10/25/2024].
 - **Search Port and Products**: Search by port number or product name and country [10/29/2024].
+- **Multiple formats for exporting reports**: Reports can be saved as either a txt, csv, doc, or pdf file. [12/06.2024]
 
 ## Getting Started
 
@@ -58,6 +59,8 @@ The Oracle is designed for security analysts, researchers and enthusiasts - faci
 
 - Python 3.x
 - `requests` library
+- `python-docx` library
+- `fpdf` library
 
 ### Installation
 
