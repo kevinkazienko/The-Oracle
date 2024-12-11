@@ -4,7 +4,6 @@
        "AlienVault": false,
        "AbuseIPDB": false,
        "Shodan": true,
-       "AlienVault": false,
        "IPQualityScore": false,
        "GreyNoise": false,
        "Censys": false,
