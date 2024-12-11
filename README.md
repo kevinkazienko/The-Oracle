@@ -91,6 +91,32 @@ The Oracle is designed for security analysts, researchers and enthusiasts - faci
 
 ## Set Up
 
+### Config
+
+Open `config.json` in the root directory and ensure all of the sources you want to enable are set to `true` otherwise the sources API will not be used.
+
+This is how it appears by default:
+
+{  
+   "enabled_apis": {  
+       "VirusTotal": false,  
+       "AlienVault": false,  
+       "AbuseIPDB": false,  
+       "Shodan": true,  
+       "IPQualityScore": false,  
+       "GreyNoise": false,  
+       "Censys": false,  
+       "Malshare": false,  
+       "MITRE": false,  
+       "URLScan": false,  
+       "BinaryEdge": false,  
+       "MetaDefender": false,  
+       "HybridAnalysis": false,  
+       "Borealis": false  
+     }  
+   }  
+
+
 ### API Keys Configuration
 
 The script requires API keys for all validation sources. CCCS (Canadian Center for Cyber Security) has an enterprise subscription to several of them including VirusTotal, Censys and Shodan. You'll need to figure out getting your account added to the subscription or just use your work email to create an account and work with the "personal" api key you receive (<i>may limit results</i>). MalwareBazaar, AbuseIPDB, etc are fine to use personal API keys. 
