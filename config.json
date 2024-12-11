@@ -1,0 +1,19 @@
+{
+    "enabled_apis": {
+       "VirusTotal": false,
+       "AlienVault": false,
+       "AbuseIPDB": false,
+       "Shodan": true,
+       "AlienVault": false,
+       "IPQualityScore": false,
+       "GreyNoise": false,
+       "Censys": false,
+       "Malshare": false,
+       "MITRE": false,
+       "URLScan": false,
+       "BinaryEdge": false,
+       "MetaDefender": false,
+       "HybridAnalysis": false,
+       "Borealis": false
+     }
+   }
