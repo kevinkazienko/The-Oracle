@@ -69,9 +69,13 @@ from api_interactions.malshare import get_malshare_hash_report
 # Configure logging to file
 #logging.basicConfig(filename='debug.log', level=logging.DEBUG)
 
-# Load the API configuration
-with open("config.json", "r") as config_file:
-    api_config = json.load(config_file)["enabled_apis"]
+# # Load the API configuration
+# with open("config.json", "r") as config_file:
+#     api_config = json.load(config_file)["enabled_apis"]
+def load_api_config():
+    with open("config.json", "r") as config_file:
+        return json.load(config_file)["enabled_apis"]
+
 
 
 def safe_join(separator, items):

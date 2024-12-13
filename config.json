@@ -1,18 +1,18 @@
 {
     "enabled_apis": {
-       "VirusTotal": false,
-       "AlienVault": false,
-       "AbuseIPDB": false,
+       "VirusTotal": true,
+       "AlienVault": true,
+       "AbuseIPDB": true,
        "Shodan": true,
-       "IPQualityScore": false,
-       "GreyNoise": false,
-       "Censys": false,
-       "Malshare": false,
-       "MITRE": false,
-       "URLScan": false,
-       "BinaryEdge": false,
-       "MetaDefender": false,
-       "HybridAnalysis": false,
-       "Borealis": false
+       "IPQualityScore": true,
+       "GreyNoise": true,
+       "Censys": true,
+       "Malshare": true,
+       "MITRE": true,
+       "URLScan": true,
+       "BinaryEdge": true,
+       "MetaDefender": true,
+       "HybridAnalysis": true,
+       "Borealis": true
      }
    }

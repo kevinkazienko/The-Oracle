@@ -52,6 +52,7 @@ The Oracle is designed for security analysts, researchers and enthusiasts - faci
 - **Search Organizations**: Search Shodan using the org filter [10/25/2024].
 - **Search Port and Products**: Search by port number or product name and country [10/29/2024].
 - **Multiple formats for exporting reports**: Reports can be saved as either a txt, csv, doc, pdf, json, or html file. [12/06.2024]
+- **Enable/Disable scan sources from UI**: Validation sources can now be enabled/disabled from the UI [12/13/2024].
 
 ## Getting Started
 
