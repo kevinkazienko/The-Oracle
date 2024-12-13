@@ -70,6 +70,14 @@ from api_interactions.malshare import get_malshare_hash_report
 #logging.basicConfig(filename='debug.log', level=logging.DEBUG)
 
 
+# Load the API configuration
+with open("config.json", "r") as config_file:
+    api_config = json.load(config_file)["enabled_apis"]
+def load_api_config():
+    with open("config.json", "r") as config_file:
+        return json.load(config_file)["enabled_apis"]
+
+
 def safe_join(separator, items):
     # Convert all items to strings, handle dictionaries by converting them to key-value pairs or extracting a specific key
     def stringify(item):
@@ -2075,30 +2083,73 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
     print(f"DEBUG: Updated selected_category = {selected_category}")
 
-    # Calculate total API calls based on the number of IOCs in each category
-    total_api_calls = (
-        len(selected_category['ips']) * 13  # 10 API calls per IP
-        + len(selected_category['urls']) * 12  # 9 API calls per URL
-        + len(selected_category['domains']) * 11  # 9 API calls per domain (if treated separately from URLs)
-        + len(selected_category['hashes']) * 5  # 4 API calls per hash
-        + len(selected_category['cves']) * 3
-        + len(selected_category['orgs']) * 2
-        + len(selected_category['ports']) * 3
-        + len(selected_category['products']) * 3
-        + len(selected_category['product_port_combinations']) * 3
-    )
+    # # Calculate total API calls based on the number of IOCs in each category
+    # total_api_calls = (
+    #     len(selected_category['ips']) * 13  # 10 API calls per IP
+    #     + len(selected_category['urls']) * 12  # 9 API calls per URL
+    #     + len(selected_category['domains']) * 11  # 9 API calls per domain (if treated separately from URLs)
+    #     + len(selected_category['hashes']) * 5  # 4 API calls per hash
+    #     + len(selected_category['cves']) * 3
+    #     + len(selected_category['orgs']) * 2
+    #     + len(selected_category['ports']) * 3
+    #     + len(selected_category['products']) * 3
+    #     + len(selected_category['product_port_combinations']) * 3
+    # )
 
+    # Define the number of API calls per source for each category
+    api_calls_per_source = {
+        "VirusTotal": {"ips": 1, "urls": 2, "domains": 1, "hashes": 1},
+        "AlienVault": {"ips": 1, "urls": 1, "domains": 1, "hashes": 1},
+        "HybridAnalysis": {"ips": 1, "urls": 1, "domains": 1, "hashes": 1},
+		"AlienVault": {"ips": 1, "urls": 1, "domains": 1, "hashes": 1},
+		"AbuseIPDB": {"ips": 1},
+        "Shodan": {"ips": 1, "ports": 1, "prods": 1, "orgs": 1, "cves": 1, "product_port_combinations": 1},
+        "IPQualityScore": {"ips": 1, "urls": 1, "domains": 1},
+        "GreyNoise": {"ips": 1},
+        "Censys": {"ips": 1, "cves": 1, "orgs": 1, "ports": 1, "prods": 1, "product_port_combinations": 1},
+        "Malshare": {"hashes": 1},
+        "MITRE": {"cves": 1},
+        "URLScan": {"urls": 2, "domains": 2},
+        "BinaryEdge": {"ips": 1, "urls": 1, "domains": 1, "ports": 1, "prods": 1, "product_port_combinations": 1},
+        "MetaDefender": {"ips": 1, "urls": 1, "domains": 1},
+        "Borealis": {"ips": 1, "urls": 1, "domains": 1}
+    }
+
+    total_api_calls = 0
+
+    # Iterate over each category and calculate API calls dynamically
+    for api_name, categories in api_calls_per_source.items():
+        if api_config.get(api_name, False): # Check if the API is enabled
+            for category, api_call_count in categories.items():
+                total_api_calls += len(selected_category.get(category, [])) * api_call_count
+
+    # Print the total API calls for debugging
+    print(f"DEBUG: Total API calls = {total_api_calls}")
+    
     # Initialize the progress bar
     if progress_bar:
         progress_bar.max = total_api_calls
         progress_bar.value = 0  # Reset progress to 0
+        
+
+    # Determine if only one validation source is active
+    active_sources = [source for source, enabled in api_config.items() if enabled]
+    if len(active_sources) == 1:
+        single_validation_source = active_sources[0]
+    else:
+        single_validation_source = None
+        
 
     for category, entries in selected_category.items():
         if entries:  # Only process if there are entries in the category
             print(f"Processing {category.upper()}...")
+            
             individual_combined_reports[category] = []
             ioc_type = category.rstrip('s')  # Converts 'ips' to 'ip', 'urls' to 'url', etc.
-            
+
+            # Single report for all IoCs if only one validation source is active
+            #if single_validation_source:
+            combined_report = ""
             
             # # Calculate dynamic progress step based on the total number of reports
             # progress_step = 100 / total_reports if total_reports > 0 else 1
@@ -2113,7 +2164,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                 print(f"\nScanning {category.capitalize()} [{count}/{len(entries)}]: {sanitize_and_defang(entry)}")
 
                 #combined_report = f"Analysis for {sanitize_and_defang(entry)} ({category.upper()}):\n\n"
-                combined_report = ""
+                #combined_report = ""
                 
                 if category == "ips":
                     trusted_provider_found = []
@@ -2128,392 +2179,420 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_metadefender_ip = None
                     report_hybrid_analysis_ip = None
 
-                    
-                    report_vt_ip = get_ip_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_abuseipdb = get_abuseipdb_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_shodan = get_shodan_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_greynoise = get_greynoise_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_censys = get_censys_data(censys_api_key, censys_secret, entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_binaryedge_ip = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_metadefender_ip = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-
-                    report_hybrid_analysis_ip = search_hybrid_analysis_by_term(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                # Borealis Report
-                
-                    borealis_report = request_borealis(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
+                    #if single_validation_source== "Shodan":
+                    if single_validation_source:
+                        # Process all IPs with Shodan-specific logic
+                        report_shodan = get_shodan_report(entry, status_output, progress_bar)
+                        if progress_bar:
                             progress_bar.value += 1
-                    
-
-
-                    # List of reports to check for trusted provider detection
-                    all_reports = [
-                        ("VirusTotal", report_vt_ip),
-                        ("AbuseIPDB", report_abuseipdb),
-                        ("IPQualityScore", report_ipqualityscore),
-                        ("AlienVault", report_alienvault)
-                    ]
-
-                    
-
-                    # Iterate over each report to check for trusted provider
-                    for vendor, report in all_reports:
-                        if report:
-                            #print(f"DEBUG: Checking trusted provider in {vendor} report")
-
-                            # Handle specific logic for each vendor
-                            if vendor == "VirusTotal":
-                                asn = report.get("data", {}).get("attributes", {}).get("asn", "")
-                                organization = report.get("data", {}).get("attributes", {}).get("organization", "")
-                                indicator = report.get("data", {}).get("attributes", {}).get("indicator", "")
-
-                                provider = check_trusted_provider(asn, organization, "")
-                                if provider:
-                                    trusted_provider_found = provider
-                                    breakdown.append(f"VirusTotal Trusted Provider Detected: {trusted_provider_found}")
-                                    #print(f"DEBUG: Trusted provider detected from VirusTotal: {trusted_provider_found}")
-
-                            elif vendor == "IPQualityScore":
-                                # Check if report is a dictionary
-                                if isinstance(report, dict):
-                                    asn = report.get("ASN", "")
-                                    isp = report.get("ISP", "")
-                                    #indicator = entry  # IP or domain entry itself as the indicator
-                                else:
-                                    #print(f"DEBUG: IPQualityScore report is not a dictionary. Report content: {report}")
-                                    asn = ""  # Default to empty string
-                                    isp = ""
-                                    #indicator = entry
-
-                            elif vendor == "AlienVault":
-                                if isinstance(report, dict):
-                                    asn = report.get("ASN", "")
-                                    organization = report.get("organization", "")
-                                    isp = report.get("isp", "")
-                                else:
-                                    # Handle the case when report is not a dict (it's a string or other type)
-                                    print(f"DEBUG: AlienVault report is not a dictionary. Report content: {report}")
-                                    asn = ""
-                                    organization = ""
-                                    isp = ""
-
-
-                    # Calculate verdict and score breakdown
-                    total_score, score_breakdown, verdict = calculate_total_malicious_score(
-                        {
-                            "VirusTotal": report_vt_ip,
-                            "AbuseIPDB": report_abuseipdb,
-                            "IPQualityScore": report_ipqualityscore,
-                            "GreyNoise": report_greynoise,
-                            "AlienVault": report_alienvault,
-                            "BinaryEdge": report_binaryedge_ip,
-                            "MetaDefender": report_metadefender_ip,
-                            "Hybrid-Analysis": report_hybrid_analysis_ip,
-                        },
-                        borealis_report,
-                        ioc_type="ip"
-                    )
-
-                    #print(f"DEBUG: trusted_provider_found before appending to verdict = {trusted_provider_found}")
-
-                    if trusted_provider_found:
-                        combined_report += f"Verdict: {verdict} (Score: {total_score}) (Belongs to {trusted_provider_found})\n"
-                        combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
+                            
+                        if report_shodan and isinstance(report_shodan, dict):
+                            shodan_report = report_shodan.get("report", {})
+                            if isinstance(shodan_report, dict) and shodan_report:  # Ensure shodan_report is not empty
+                                last_analysis_date = report_shodan.get('last_update', 'N/A')
+                                combined_report += f"IP: {sanitize_and_defang(entry)}\n"
+                                for key, value in shodan_report.items():
+                                    if isinstance(value, list) and value:  # Handle non-empty lists
+                                        combined_report += f"  {key}: {', '.join(map(str, value))}\n"
+                                    elif value:  # Handle other types of values
+                                        combined_report += f"  {key}: {sanitize_and_defang(value)}\n"
+                                    else:
+                                        combined_report += f"  {key}: None\n"
+                                combined_report += "\n"
+                            else:
+                                combined_report += f"IP: {sanitize_and_defang(entry)}\n"
+                                combined_report += f"  N/A\n\n"
+                        else:
+                            combined_report += f"IP: {sanitize_and_defang(entry)}\n"
+                            combined_report += "  Shodan Report: N/A\n\n"
                     else:
-                        combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
-                        combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
-                 
-                                        
-                        # VirusTotal Report
-                    if report_vt_ip and report_vt_ip != f"Failed to fetch VirusTotal IP report for {entry}.":
-                        malicious_score = report_vt_ip['data']['attributes']['last_analysis_stats']['malicious']
-                        suspicious_score = report_vt_ip['data']['attributes']['last_analysis_stats']['suspicious']
-                        last_analysis_date = report_vt_ip.get('data', {}).get('attributes', {}).get('last_analysis_date', None)
-                        if last_analysis_date:
-                            last_analysis_date_formatted = datetime.utcfromtimestamp(last_analysis_date).strftime('%Y-%m-%d %H:%M:%S')
-                        else:
-                            last_analysis_date_formatted = "N/A"
-                        av_vendors = extract_av_vendors(report_vt_ip)
-                        crowdsourced_context = report_vt_ip['data']['attributes'].get('crowdsourced_context', 'N/A')
-                        crowdsourced_context_formatted = format_crowdsourced_context(crowdsourced_context)
+                        if api_config.get("VirusTotal", False):
+                            report_vt_ip = get_ip_report(entry, status_output, progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
                     
-                        tags = ', '.join(report_vt_ip['data']['attributes'].get('tags', [])) if report_vt_ip['data']['attributes'].get('tags') else 'N/A'
-                        categories = report_vt_ip.get('data', {}).get('attributes', {}).get('categories', None)
-                        categories_str = process_dynamic_field(categories)
-                        popularity_ranks = report_vt_ip.get('data', {}).get('attributes', {}).get('popularity_ranks', {})
-                        popularity_str = ', '.join([f"{source}: {info.get('rank')}" for source, info in popularity_ranks.items()])
-                        registrar = report_vt_ip.get('data', {}).get('attributes', {}).get('registrar', 'N/A')
-                        creation_date = report_vt_ip.get('data', {}).get('attributes', {}).get('creation_date', 'N/A')
-                        if creation_date != 'N/A':
-                            creation_date = datetime.utcfromtimestamp(creation_date).strftime('%Y-%m-%d %H:%M:%S')
+                        if api_config.get("AbuseIPDB", False):
+                            report_abuseipdb = get_abuseipdb_report(entry, status_output, progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
                     
-                        # Extract Passive DNS data
-                        passive_dns_data = report_vt_ip.get("passive_dns", [])
-                        if passive_dns_data:
-                            passive_dns_str = "\n".join([
-                                f"    - Hostname: {sanitize_and_defang(item)['hostname']}\n     - Resolved Date: {item['resolved_date']}"
-                                for item in passive_dns_data
-                            ])
-                            passive_dns_formatted = f"  - Passive DNS Data:\n{passive_dns_str}\n"
-                        else:
-                            passive_dns_formatted = "  - Passive DNS Data: N/A\n"
+                        if api_config.get("Shodan", False):
+                            report_shodan = get_shodan_report(entry, status_output, progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
                     
-                        # Extract Communicating Files data
-                        communicating_files_data = report_vt_ip.get("communicating_files", [])
-                        if communicating_files_data:
-                            communicating_files_str = "\n".join([
-                                f"    - File Name: {item.get('file_name', 'N/A')}\n"
-                                f"     - SHA256: {item.get('sha256', 'N/A')}\n"
-                                f"     - First Submission Date: {item.get('first_submission_date', 'N/A')}\n"
-                                f"     - AV Detections: Malicious: {item.get('av_detections', {}).get('malicious', 0)}, "
-                                f"Suspicious: {item.get('av_detections', {}).get('suspicious', 0)}, "
-                                f"Undetected: {item.get('av_detections', {}).get('undetected', 0)}, "
-                                f"Harmless: {item.get('av_detections', {}).get('harmless', 0)}"
-                                for item in communicating_files_data
-                            ])
-                            communicating_files_formatted = f"  - Communicating Files:\n{communicating_files_str}\n"
-                        else:
-                            communicating_files_formatted = "  - Communicating Files: N/A\n"
+                        if api_config.get("AlienVault", False):
+                            report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
                     
-                        # Fetch downloaded files via relations endpoint
-                        downloaded_files = get_downloaded_files(entry)
-                        if downloaded_files:
-                            downloaded_files_str = "\n".join([
-                                f"    - File Name: {file.get('meaningful_name', 'N/A')}\n"
-                                f"     - SHA256: {file.get('sha256', 'N/A')}"
-                                for file in downloaded_files
-                            ])
-                            downloaded_files_formatted = f"  - Downloaded Files:\n{downloaded_files_str}\n"
-                        else:
-                            downloaded_files_formatted = "  - Downloaded Files: No files found in relations.\n"
-                        
-                        # Include the downloaded files in the report
-                        vt_result = (
-                            f"  - IOC: {sanitize_and_defang(entry)}\n"
-                            f"  - Malicious Vendor Score: {malicious_score}\n"
-                            f"  - Malicious Detections: {malicious_score}\n"
-                            f"  - Suspicious Detections: {suspicious_score}\n"
-                            f"  - Malicious Vendors: {', '.join(av_vendors['malicious'])}\n"
-                            f"  - Suspicious Vendors: {', '.join(av_vendors['suspicious'])}\n"
-                            f"  - Tags: {tags}\n"
-                            f"  - Categories: {categories_str}\n"
-                            f"  - Popularity Ranks: {popularity_str}\n"
-                            f"  - Registrar: {registrar}\n"
-                            f"  - Creation Date: {creation_date}\n"
-                            f"{passive_dns_formatted}"
-                            f"{communicating_files_formatted}"
-                            f"{downloaded_files_formatted}"
-                            f"  - Crowdsourced Context:\n    {crowdsourced_context_formatted}\n"
-                            f"  - Last Analysis Date: {last_analysis_date_formatted}\n"
-                        )
-                        
-                        # Append the VirusTotal report to the combined report
-                        combined_report += f"VirusTotal Report:\n{vt_result}\n"
+                        if api_config.get("IPQualityScore", False):
+                            report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
                     
-    
-                    # AbuseIPDB Report
-                    if report_abuseipdb and not report_abuseipdb.get("error"):
-                        last_analysis_date = report_abuseipdb.get('lastSeen', 'N/A')
-                        abuse_confidence_score = report_abuseipdb.get('abuseConfidenceScore', 'N/A')
-                        is_tor = report_abuseipdb.get('isTor', 'N/A')
-                        total_reports = report_abuseipdb.get('totalReports', 'N/A')
-                        domain = report_abuseipdb.get('domain', 'N/A')
-                        country_code = report_abuseipdb.get('country_code', 'N/A')
-                        isp = report_abuseipdb.get('isp', 'N/A')
-                        combined_report += (
-                            f"AbuseIPDB Report:\n"
-                            f"  - Abuse Confidence Score: {abuse_confidence_score}\n"
-                            f"  - Is Tor Exit Node: {is_tor}\n"
-                            f"  - Total Reports: {total_reports}\n"
-                            f"  - Country Code: {country_code}\n"
-                            f"  - ISP: {isp}\n"
-                            f"  - Domain: {sanitize_and_defang(domain)}\n"
-                            f"  - Last Seen: {last_analysis_date}\n"
-                        )
-                        # Include top comments if available
-                        top_comments = report_abuseipdb.get("topComments", [])
-                        if top_comments:
-                            combined_report += "  - Top Comments:\n"
-                            for idx, comment_data in enumerate(top_comments, start=1):
-                                comment_text = comment_data.get("comment", "No comment text")
-                                reported_at = comment_data.get("reportedAt", "N/A")
-                                reporter_id = comment_data.get("reporterId", "Anonymous")
-                                
-                                combined_report += (
-                                    f"    - Comment: {comment_text}\n"
-                                    f"       - Reported By: {reporter_id}\n"
-                                    f"       - Reported At: {reported_at}\n"
-                                )
-                        else:
-                            combined_report += "  - Top Comments: None available\n"
+                        if api_config.get("GreyNoise", False):
+                            report_greynoise = get_greynoise_report(entry, status_output, progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
+                    
+                        if api_config.get("Censys", False):
+                            report_censys = get_censys_data(censys_api_key, censys_secret, entry, status_output, progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
+                    
+                        if api_config.get("BinaryEdge", False):
+                            report_binaryedge_ip = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
+                    
+                        if api_config.get("MetaDefender", False):
+                            report_metadefender_ip = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
 
-                        combined_report += "\n"
-                    else:
-                        combined_report += "AbuseIPDB Report:\nN/A\n\n"
-
+                        if api_config.get("Hybrid-Analysis", False):
+                            report_hybrid_analysis_ip = search_hybrid_analysis_by_term(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
                     
+                        # Borealis Report
+                        if api_config.get("Borealis", False):
+                            borealis_report = request_borealis(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                            if progress_bar:
+                                    progress_bar.value += 1
+                        
     
-                    # Shodan Report
-                    if report_shodan and isinstance(report_shodan, dict):
-                        shodan_report = report_shodan.get("report", {})
-                        if isinstance(shodan_report, dict):
-                            last_analysis_date = report_shodan.get('last_update', 'N/A')
-                            combined_report += f"Shodan Report:\n"
-                            for key, value in shodan_report.items():
-                                if isinstance(value, list):
+    
+                        # List of reports to check for trusted provider detection
+                        all_reports = [
+                            ("VirusTotal", report_vt_ip),
+                            ("AbuseIPDB", report_abuseipdb),
+                            ("IPQualityScore", report_ipqualityscore),
+                            ("AlienVault", report_alienvault)
+                        ]
+    
+                        
+    
+                        # Iterate over each report to check for trusted provider
+                        for vendor, report in all_reports:
+                            if report:
+                                #print(f"DEBUG: Checking trusted provider in {vendor} report")
+    
+                                # Handle specific logic for each vendor
+                                if vendor == "VirusTotal":
+                                    asn = report.get("data", {}).get("attributes", {}).get("asn", "")
+                                    organization = report.get("data", {}).get("attributes", {}).get("organization", "")
+                                    indicator = report.get("data", {}).get("attributes", {}).get("indicator", "")
+    
+                                    provider = check_trusted_provider(asn, organization, "")
+                                    if provider:
+                                        trusted_provider_found = provider
+                                        breakdown.append(f"VirusTotal Trusted Provider Detected: {trusted_provider_found}")
+                                        #print(f"DEBUG: Trusted provider detected from VirusTotal: {trusted_provider_found}")
+    
+                                elif vendor == "IPQualityScore":
+                                    # Check if report is a dictionary
+                                    if isinstance(report, dict):
+                                        asn = report.get("ASN", "")
+                                        isp = report.get("ISP", "")
+                                        #indicator = entry  # IP or domain entry itself as the indicator
+                                    else:
+                                        #print(f"DEBUG: IPQualityScore report is not a dictionary. Report content: {report}")
+                                        asn = ""  # Default to empty string
+                                        isp = ""
+                                        #indicator = entry
+    
+                                elif vendor == "AlienVault":
+                                    if isinstance(report, dict):
+                                        asn = report.get("ASN", "")
+                                        organization = report.get("organization", "")
+                                        isp = report.get("isp", "")
+                                    else:
+                                        # Handle the case when report is not a dict (it's a string or other type)
+                                        print(f"DEBUG: AlienVault report is not a dictionary. Report content: {report}")
+                                        asn = ""
+                                        organization = ""
+                                        isp = ""
+    
+    
+                        # Calculate verdict and score breakdown
+                        total_score, score_breakdown, verdict = calculate_total_malicious_score(
+                            {
+                                "VirusTotal": report_vt_ip,
+                                "AbuseIPDB": report_abuseipdb,
+                                "IPQualityScore": report_ipqualityscore,
+                                "GreyNoise": report_greynoise,
+                                "AlienVault": report_alienvault,
+                                "BinaryEdge": report_binaryedge_ip,
+                                "MetaDefender": report_metadefender_ip,
+                                "Hybrid-Analysis": report_hybrid_analysis_ip,
+                            },
+                            borealis_report,
+                            ioc_type="ip"
+                        )
+    
+                        #print(f"DEBUG: trusted_provider_found before appending to verdict = {trusted_provider_found}")
+    
+                        if trusted_provider_found:
+                            combined_report += f"Verdict: {verdict} (Score: {total_score}) (Belongs to {trusted_provider_found})\n"
+                            combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
+                        else:
+                            combined_report += f"Verdict: {verdict} (Score: {total_score})\n"
+                            combined_report += f"***Scoring is to be taken with a grain of salt...Please use judgement.***\n\n"
+                     
+                                            
+                            # VirusTotal Report
+                        if report_vt_ip and report_vt_ip != f"Failed to fetch VirusTotal IP report for {entry}.":
+                            malicious_score = report_vt_ip['data']['attributes']['last_analysis_stats']['malicious']
+                            suspicious_score = report_vt_ip['data']['attributes']['last_analysis_stats']['suspicious']
+                            last_analysis_date = report_vt_ip.get('data', {}).get('attributes', {}).get('last_analysis_date', None)
+                            if last_analysis_date:
+                                last_analysis_date_formatted = datetime.utcfromtimestamp(last_analysis_date).strftime('%Y-%m-%d %H:%M:%S')
+                            else:
+                                last_analysis_date_formatted = "N/A"
+                            av_vendors = extract_av_vendors(report_vt_ip)
+                            crowdsourced_context = report_vt_ip['data']['attributes'].get('crowdsourced_context', 'N/A')
+                            crowdsourced_context_formatted = format_crowdsourced_context(crowdsourced_context)
+                        
+                            tags = ', '.join(report_vt_ip['data']['attributes'].get('tags', [])) if report_vt_ip['data']['attributes'].get('tags') else 'N/A'
+                            categories = report_vt_ip.get('data', {}).get('attributes', {}).get('categories', None)
+                            categories_str = process_dynamic_field(categories)
+                            popularity_ranks = report_vt_ip.get('data', {}).get('attributes', {}).get('popularity_ranks', {})
+                            popularity_str = ', '.join([f"{source}: {info.get('rank')}" for source, info in popularity_ranks.items()])
+                            registrar = report_vt_ip.get('data', {}).get('attributes', {}).get('registrar', 'N/A')
+                            creation_date = report_vt_ip.get('data', {}).get('attributes', {}).get('creation_date', 'N/A')
+                            if creation_date != 'N/A':
+                                creation_date = datetime.utcfromtimestamp(creation_date).strftime('%Y-%m-%d %H:%M:%S')
+                        
+                            # Extract Passive DNS data
+                            passive_dns_data = report_vt_ip.get("passive_dns", [])
+                            if passive_dns_data:
+                                passive_dns_str = "\n".join([
+                                    f"    - Hostname: {sanitize_and_defang(item)['hostname']}\n     - Resolved Date: {item['resolved_date']}"
+                                    for item in passive_dns_data
+                                ])
+                                passive_dns_formatted = f"  - Passive DNS Data:\n{passive_dns_str}\n"
+                            else:
+                                passive_dns_formatted = "  - Passive DNS Data: N/A\n"
+                        
+                            # Extract Communicating Files data
+                            communicating_files_data = report_vt_ip.get("communicating_files", [])
+                            if communicating_files_data:
+                                communicating_files_str = "\n".join([
+                                    f"    - File Name: {item.get('file_name', 'N/A')}\n"
+                                    f"     - SHA256: {item.get('sha256', 'N/A')}\n"
+                                    f"     - First Submission Date: {item.get('first_submission_date', 'N/A')}\n"
+                                    f"     - AV Detections: Malicious: {item.get('av_detections', {}).get('malicious', 0)}, "
+                                    f"Suspicious: {item.get('av_detections', {}).get('suspicious', 0)}, "
+                                    f"Undetected: {item.get('av_detections', {}).get('undetected', 0)}, "
+                                    f"Harmless: {item.get('av_detections', {}).get('harmless', 0)}"
+                                    for item in communicating_files_data
+                                ])
+                                communicating_files_formatted = f"  - Communicating Files:\n{communicating_files_str}\n"
+                            else:
+                                communicating_files_formatted = "  - Communicating Files: N/A\n"
+                        
+                            # Fetch downloaded files via relations endpoint
+                            downloaded_files = get_downloaded_files(entry)
+                            if downloaded_files:
+                                downloaded_files_str = "\n".join([
+                                    f"    - File Name: {file.get('meaningful_name', 'N/A')}\n"
+                                    f"     - SHA256: {file.get('sha256', 'N/A')}"
+                                    for file in downloaded_files
+                                ])
+                                downloaded_files_formatted = f"  - Downloaded Files:\n{downloaded_files_str}\n"
+                            else:
+                                downloaded_files_formatted = "  - Downloaded Files: No files found in relations.\n"
+                            
+                            # Include the downloaded files in the report
+                            vt_result = (
+                                f"  - IOC: {sanitize_and_defang(entry)}\n"
+                                f"  - Malicious Vendor Score: {malicious_score}\n"
+                                f"  - Malicious Detections: {malicious_score}\n"
+                                f"  - Suspicious Detections: {suspicious_score}\n"
+                                f"  - Malicious Vendors: {', '.join(av_vendors['malicious'])}\n"
+                                f"  - Suspicious Vendors: {', '.join(av_vendors['suspicious'])}\n"
+                                f"  - Tags: {tags}\n"
+                                f"  - Categories: {categories_str}\n"
+                                f"  - Popularity Ranks: {popularity_str}\n"
+                                f"  - Registrar: {registrar}\n"
+                                f"  - Creation Date: {creation_date}\n"
+                                f"{passive_dns_formatted}"
+                                f"{communicating_files_formatted}"
+                                f"{downloaded_files_formatted}"
+                                f"  - Crowdsourced Context:\n    {crowdsourced_context_formatted}\n"
+                                f"  - Last Analysis Date: {last_analysis_date_formatted}\n"
+                            )
+                            
+                            # Append the VirusTotal report to the combined report
+                            combined_report += f"VirusTotal Report:\n{vt_result}\n"
+                        
+        
+                        # AbuseIPDB Report
+                        if report_abuseipdb and not report_abuseipdb.get("error"):
+                            last_analysis_date = report_abuseipdb.get('lastSeen', 'N/A')
+                            abuse_confidence_score = report_abuseipdb.get('abuseConfidenceScore', 'N/A')
+                            is_tor = report_abuseipdb.get('isTor', 'N/A')
+                            total_reports = report_abuseipdb.get('totalReports', 'N/A')
+                            domain = report_abuseipdb.get('domain', 'N/A')
+                            country_code = report_abuseipdb.get('country_code', 'N/A')
+                            isp = report_abuseipdb.get('isp', 'N/A')
+                            combined_report += (
+                                f"AbuseIPDB Report:\n"
+                                f"  - Abuse Confidence Score: {abuse_confidence_score}\n"
+                                f"  - Is Tor Exit Node: {is_tor}\n"
+                                f"  - Total Reports: {total_reports}\n"
+                                f"  - Country Code: {country_code}\n"
+                                f"  - ISP: {isp}\n"
+                                f"  - Domain: {sanitize_and_defang(domain)}\n"
+                                f"  - Last Seen: {last_analysis_date}\n"
+                            )
+                            # Include top comments if available
+                            top_comments = report_abuseipdb.get("topComments", [])
+                            if top_comments:
+                                combined_report += "  - Top Comments:\n"
+                                for idx, comment_data in enumerate(top_comments, start=1):
+                                    comment_text = comment_data.get("comment", "No comment text")
+                                    reported_at = comment_data.get("reportedAt", "N/A")
+                                    reporter_id = comment_data.get("reporterId", "Anonymous")
                                     
-                                    combined_report += f"  {key}: {', '.join(map(str, value))}\n"
-                                else:
-                                    combined_report += f"  {key}: {sanitize_and_defang(value)}\n"
+                                    combined_report += (
+                                        f"    - Comment: {comment_text}\n"
+                                        f"       - Reported By: {reporter_id}\n"
+                                        f"       - Reported At: {reported_at}\n"
+                                    )
+                            else:
+                                combined_report += "  - Top Comments: None available\n"
+    
                             combined_report += "\n"
                         else:
-                            combined_report += f"Shodan Report:\n{sanitize_and_defang(shodan_report)}\n\n"
-                    else:
-                        combined_report += f"Shodan Report:\nN/A\n\n"
-
-                    
+                            combined_report += "AbuseIPDB Report:\nN/A\n\n"
     
-                    # IPQualityScore Report
-                    if isinstance(report_ipqualityscore, str):
-                        combined_report += f"{sanitize_and_defang(report_ipqualityscore)}\n\n"
-                        match = re.search(r'Country Code:\s+(\w+)', report_ipqualityscore)
-                        country_code = match.group(1) if match else 'N/A'  # Get the country code if it exists
-                    elif isinstance(report_ipqualityscore, dict):
-                        # If somehow the report is a dict, parse it as needed (though this shouldn't happen in your case)
-                        parsed_ipqs = parse_ipqualityscore_report(json.dumps(report_ipqualityscore))
-                        combined_report += f"IPQualityScore Report (Parsed):\n{parsed_ipqs}\n\n"
-                        match = re.search(r'Country Code:\s+(\w+)', report_ipqualityscore)
-                        country_code = match.group(1) if match else 'N/A'  # Get the country code if it exists
-                    else:
-                        combined_report += "IPQualityScore Report: No data available\n\n"
-                    
+                        
+        
+                        # Shodan Report
+                        if report_shodan and isinstance(report_shodan, dict):
+                            shodan_report = report_shodan.get("report", {})
+                            if isinstance(shodan_report, dict):
+                                last_analysis_date = report_shodan.get('last_update', 'N/A')
+                                combined_report += f"Shodan Report:\n"
+                                for key, value in shodan_report.items():
+                                    if isinstance(value, list):
+                                        
+                                        combined_report += f"  {key}: {', '.join(map(str, value))}\n"
+                                    else:
+                                        combined_report += f"  {key}: {sanitize_and_defang(value)}\n"
+                                combined_report += "\n"
+                            else:
+                                combined_report += f"Shodan Report:\n{sanitize_and_defang(shodan_report)}\n\n"
+                        else:
+                            combined_report += f"Shodan Report:\nN/A\n\n"
+    
+                        
+        
+                        # IPQualityScore Report
+                        if isinstance(report_ipqualityscore, str):
+                            combined_report += f"{sanitize_and_defang(report_ipqualityscore)}\n\n"
+                            match = re.search(r'Country Code:\s+(\w+)', report_ipqualityscore)
+                            country_code = match.group(1) if match else 'N/A'  # Get the country code if it exists
+                        elif isinstance(report_ipqualityscore, dict):
+                            # If somehow the report is a dict, parse it as needed (though this shouldn't happen in your case)
+                            parsed_ipqs = parse_ipqualityscore_report(json.dumps(report_ipqualityscore))
+                            combined_report += f"IPQualityScore Report (Parsed):\n{parsed_ipqs}\n\n"
+                            match = re.search(r'Country Code:\s+(\w+)', report_ipqualityscore)
+                            country_code = match.group(1) if match else 'N/A'  # Get the country code if it exists
+                        else:
+                            combined_report += "IPQualityScore Report: No data available\n\n"
+                        
+                            
+        
+                        # AlienVault OTX Report
+                        if isinstance(report_alienvault, dict):
+                            combined_report += format_alienvault_report(report_alienvault) + "\n\n"
+                        else:
+                            combined_report += "AlienVault OTX Report:\nN/A\n\n"
+                        
+        
+                        # GreyNoise Report
+                        if report_greynoise and not report_greynoise.get("error"):
+                            last_analysis_date = report_greynoise.get('last_seen', 'N/A')
+                            combined_report += f"GreyNoise Report:\n"
+                            combined_report += f"  - IP: {sanitize_and_defang(report_greynoise.get('ip', 'N/A'))}\n"
+                            combined_report += f"  - Noise: {report_greynoise.get('noise', 'N/A')}\n"
+                            combined_report += f"  - Riot: {report_greynoise.get('riot', 'N/A')}\n"
+                            combined_report += f"  - Classification: {report_greynoise.get('classification', 'N/A')}\n"
+                            combined_report += f"  - Name: {sanitize_and_defang(report_greynoise.get('name', 'N/A'))}\n"
+                            combined_report += f"  - Link: {sanitize_and_defang(report_greynoise.get('link', 'N/A'))}\n"
+                            combined_report += f"  - First Seen: {report_greynoise.get('first_seen', 'N/A')}\n"
+                            combined_report += f"  - Last Seen: {last_analysis_date}\n\n"
+                        else:
+                            combined_report += "GreyNoise Report:\nN/A\n\n"
+                        
+        
+                        # Censys Report
+                        if report_censys:
+                            combined_report += (
+                                f"Censys Report:\n"
+                                f"  - IP: {sanitize_and_defang(report_censys.get('ip', 'N/A'))}\n"
+                                f"  - Asn: {report_censys.get('asn', 'N/A')}\n"
+                                f"  - Organization: {report_censys.get('organization', 'N/A')}\n"
+                                f"  - Country: {report_censys.get('country', 'N/A')}\n"
+                                f"  - City: {report_censys.get('city', 'N/A')}\n"
+                                f"  - Latitude: {report_censys.get('latitude', 'N/A')}\n"
+                                f"  - Longitude: {report_censys.get('longitude', 'N/A')}\n"
+                                f"  - Operating System: {report_censys.get('operating_system', 'N/A')}\n"
+                                f"  - Services:\n"
+                            )
+                            for service in report_censys.get('services', []):
+                                combined_report += f"    - Port: {service.get('port', 'N/A')}, Service Name: {service.get('service_name', 'N/A')}, Observed At: {service.get('observed_at', 'N/A')}\n"
+                            combined_report += f"  - Last Updated: {report_censys.get('last_updated', 'N/A')}\n\n"
+                        else:
+                            combined_report += "Censys Report:\nN/A\n\n"
                         
     
-                    # AlienVault OTX Report
-                    if isinstance(report_alienvault, dict):
-                        combined_report += format_alienvault_report(report_alienvault) + "\n\n"
-                    else:
-                        combined_report += "AlienVault OTX Report:\nN/A\n\n"
-                    
+                        # BinaryEdge Report
+                        if report_binaryedge_ip:
+                            parsed_binaryedge_info = parse_binaryedge_report(report_binaryedge_ip, "ip")
+                            combined_report += f"BinaryEdge Report:\n{sanitize_and_defang(parsed_binaryedge_info)}\n\n"
+                        else:
+                            combined_report += "BinaryEdge Report:\n  - No relevant data found.\n\n"
+                        
     
-                    # GreyNoise Report
-                    if report_greynoise and not report_greynoise.get("error"):
-                        last_analysis_date = report_greynoise.get('last_seen', 'N/A')
-                        combined_report += f"GreyNoise Report:\n"
-                        combined_report += f"  - IP: {sanitize_and_defang(report_greynoise.get('ip', 'N/A'))}\n"
-                        combined_report += f"  - Noise: {report_greynoise.get('noise', 'N/A')}\n"
-                        combined_report += f"  - Riot: {report_greynoise.get('riot', 'N/A')}\n"
-                        combined_report += f"  - Classification: {report_greynoise.get('classification', 'N/A')}\n"
-                        combined_report += f"  - Name: {sanitize_and_defang(report_greynoise.get('name', 'N/A'))}\n"
-                        combined_report += f"  - Link: {sanitize_and_defang(report_greynoise.get('link', 'N/A'))}\n"
-                        combined_report += f"  - First Seen: {report_greynoise.get('first_seen', 'N/A')}\n"
-                        combined_report += f"  - Last Seen: {last_analysis_date}\n\n"
-                    else:
-                        combined_report += "GreyNoise Report:\nN/A\n\n"
-                    
+                        
+                        # MetaDefender Report
+                        if report_metadefender_ip:
+                            combined_report += f"{sanitize_and_defang(report_metadefender_ip)}\n\n"
+                        else:
+                            combined_report += "Metadefender Report:\n  - No relevant data found.\n\n"
     
-                    # Censys Report
-                    if report_censys:
-                        combined_report += (
-                            f"Censys Report:\n"
-                            f"  - IP: {sanitize_and_defang(report_censys.get('ip', 'N/A'))}\n"
-                            f"  - Asn: {report_censys.get('asn', 'N/A')}\n"
-                            f"  - Organization: {report_censys.get('organization', 'N/A')}\n"
-                            f"  - Country: {report_censys.get('country', 'N/A')}\n"
-                            f"  - City: {report_censys.get('city', 'N/A')}\n"
-                            f"  - Latitude: {report_censys.get('latitude', 'N/A')}\n"
-                            f"  - Longitude: {report_censys.get('longitude', 'N/A')}\n"
-                            f"  - Operating System: {report_censys.get('operating_system', 'N/A')}\n"
-                            f"  - Services:\n"
-                        )
-                        for service in report_censys.get('services', []):
-                            combined_report += f"    - Port: {service.get('port', 'N/A')}, Service Name: {service.get('service_name', 'N/A')}, Observed At: {service.get('observed_at', 'N/A')}\n"
-                        combined_report += f"  - Last Updated: {report_censys.get('last_updated', 'N/A')}\n\n"
-                    else:
-                        combined_report += "Censys Report:\nN/A\n\n"
-                    
-
-                    # BinaryEdge Report
-                    if report_binaryedge_ip:
-                        parsed_binaryedge_info = parse_binaryedge_report(report_binaryedge_ip, "ip")
-                        combined_report += f"BinaryEdge Report:\n{sanitize_and_defang(parsed_binaryedge_info)}\n\n"
-                    else:
-                        combined_report += "BinaryEdge Report:\n  - No relevant data found.\n\n"
-                    
-
-                    
-                    # MetaDefender Report
-                    if report_metadefender_ip:
-                        combined_report += f"{sanitize_and_defang(report_metadefender_ip)}\n\n"
-                    else:
-                        combined_report += "Metadefender Report:\n  - No relevant data found.\n\n"
-
-                    # Hybrid-Analysis Report
-                    if report_hybrid_analysis_ip:
-                        hybrid_analysis_report_str = parse_hybrid_analysis_ip_response(report_hybrid_analysis_ip, debug=debug)
-                        if debug:
-                            print(f"DEBUG: Parsed Hybrid-Analysis Report (IP):\n{hybrid_analysis_report_str}")
-                        combined_report += f"Hybrid-Analysis Report (IP):\n{hybrid_analysis_report_str}\n\n"
-                    else:
-                        combined_report += "Hybrid-Analysis Report (IP): No results found.\n\n"
-                    
-
-                    # Format and append the Borealis report to the combined report
-                    if borealis_report:
-                        formatted_borealis_report = format_borealis_report(borealis_report, ioc_type="ip", request=entry)
-                        combined_report += f"{sanitize_and_defang(formatted_borealis_report)}\n\n"
-                    else:
-                        combined_report += "Borealis Report:\nN/A\n\n"
-            
-
-                    # combined_report += f"Verdict: {verdict} (Score: {total_score})\n\nScore Breakdown\n{breakdown}\n\n"
-                    combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
-
-
-                    # Append to scores list for sorting
-                    print(f"DEBUG: Appending to ioc_scores - IOC: {entry}, Score: {total_score}")
-                    ioc_scores.append((entry, total_score, combined_report, verdict, country_code))
+                        # Hybrid-Analysis Report
+                        if report_hybrid_analysis_ip:
+                            hybrid_analysis_report_str = parse_hybrid_analysis_ip_response(report_hybrid_analysis_ip, debug=debug)
+                            if debug:
+                                print(f"DEBUG: Parsed Hybrid-Analysis Report (IP):\n{hybrid_analysis_report_str}")
+                            combined_report += f"Hybrid-Analysis Report (IP):\n{hybrid_analysis_report_str}\n\n"
+                        else:
+                            combined_report += "Hybrid-Analysis Report (IP): No results found.\n\n"
+                        
     
-                    individual_combined_reports[category].append(combined_report)
+                        # Format and append the Borealis report to the combined report
+                        if borealis_report:
+                            formatted_borealis_report = format_borealis_report(borealis_report, ioc_type="ip", request=entry)
+                            combined_report += f"{sanitize_and_defang(formatted_borealis_report)}\n\n"
+                        else:
+                            combined_report += "Borealis Report:\nN/A\n\n"
+                
+    
+                        # combined_report += f"Verdict: {verdict} (Score: {total_score})\n\nScore Breakdown\n{breakdown}\n\n"
+                        combined_report += f"-------------------\n| Score Breakdown |\n-------------------\n{score_breakdown}\n\n"
+    
+    
+                        # Append to scores list for sorting
+                        print(f"DEBUG: Appending to ioc_scores - IOC: {entry}, Score: {total_score}")
+                        ioc_scores.append((entry, total_score, combined_report, verdict, country_code))
+        
+                        individual_combined_reports[category].append(combined_report)
     
                 elif category == "urls":# or category == "domains":
                     trusted_provider_found = []
@@ -2525,10 +2604,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_metadefender_url = None
                     report_hybrid_analysis_url = None
 
-                    
-                    urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("URLScan", False):
+                        urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
 
                     # is_domain_ioc = is_domain(entry)
                     # report_hybrid_analysis = None
@@ -2537,76 +2616,77 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     #     print(f"Detected domain: {entry}. Using Hybrid-Analysis /search/terms endpoint.")
                     #     report_hybrid_analysis = search_hybrid_analysis_by_term(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
                     # else:
-                    print(f"Detected URL: {entry}. Using Hybrid-Analysis /quick-scan/url endpoint.")
-                    submission_id, finished = submit_url_to_hybrid_analysis(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
-                
-                    if submission_id:
-                        if finished:
-                            # Fetch the report directly since it's already complete
-                            print("Quick-scan analysis is already completed. Fetching the report directly.")
-                            results_url = f"{HYBRID_ANALYSIS_BASE_URL}/quick-scan/{submission_id}"
-                            headers = {
-                                "accept": "application/json",
-                                "api-key": hybridanalysis_api_key
-                            }
-                            response = requests.get(results_url, headers=headers)
-                            if response.status_code == 200:
-                                report_hybrid_analysis_url = response.json()
+                    if api_config.get("Hybrid-Analysis", False):
+                        print(f"Detected URL: {entry}. Using Hybrid-Analysis /quick-scan/url endpoint.")
+                        submission_id, finished = submit_url_to_hybrid_analysis(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
+                    
+                        if submission_id:
+                            if finished:
+                                # Fetch the report directly since it's already complete
+                                print("Quick-scan analysis is already completed. Fetching the report directly.")
+                                results_url = f"{HYBRID_ANALYSIS_BASE_URL}/quick-scan/{submission_id}"
+                                headers = {
+                                    "accept": "application/json",
+                                    "api-key": hybridanalysis_api_key
+                                }
+                                response = requests.get(results_url, headers=headers)
+                                if response.status_code == 200:
+                                    report_hybrid_analysis_url = response.json()
+                                else:
+                                    print(f"Failed to fetch completed quick-scan report. HTTP {response.status_code}: {response.text}")
+                                    report_hybrid_analysis_url = None
                             else:
-                                print(f"Failed to fetch completed quick-scan report. HTTP {response.status_code}: {response.text}")
-                                report_hybrid_analysis_url = None
+                                # Poll for the report if the analysis is still in progress
+                                print("Quick-scan analysis is in progress. Polling for the final report.")
+                                report_hybrid_analysis_url = fetch_hybrid_analysis_report(
+                                    submission_id, status_output=status_output, progress_bar=progress_bar
+                                )
                         else:
-                            # Poll for the report if the analysis is still in progress
-                            print("Quick-scan analysis is in progress. Polling for the final report.")
-                            report_hybrid_analysis_url = fetch_hybrid_analysis_report(
-                                submission_id, status_output=status_output, progress_bar=progress_bar
-                            )
-                    else:
-                        report_hybrid_analysis = None  # No submission ID, so no report
-                    
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                    
-                    url_id = submit_url_for_analysis(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    if url_id:
-                        time.sleep(16)
-                        report_vt_url = get_url_report(url_id, status_output, progress_bar)
+                            report_hybrid_analysis = None  # No submission ID, so no report
+                        
                         if progress_bar:
                             progress_bar.value += 1
                 
-                    
-                        if urlscan_uuid:
-                            report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
+                    if api_config.get("VirusTotal", False):
+                        url_id = submit_url_for_analysis(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                    if api_config.get("IPQualityScore", False):
+                        report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                    if api_config.get("AlienVault", False):
+                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                    if api_config.get("VirusTotal", False):
+                        if url_id:
+                            time.sleep(16)
+                            report_vt_url = get_url_report(url_id, status_output, progress_bar)
                             if progress_bar:
                                 progress_bar.value += 1
-                    
-                        else:
-                            report_urlscan = None
+                
+                        if api_config.get("URLScan", False):
+                            if urlscan_uuid:
+                                report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
+                                if progress_bar:
+                                    progress_bar.value += 1
+                        
+                            else:
+                                report_urlscan = None
 
+                    if api_config.get("BinaryEdge", False):
+                        report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                 
-                    report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("MetaDefender", False):
+                        report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                     
                 
                     # Check if the domain is resolving
@@ -2615,10 +2695,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         #combined_report += f"Verdict: Not Malicious (Domain Not Resolving)\n\n"
                         #continue  # Skip further checks for this URL as it's not resolving
                         
-                    
-                    borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("Borealis", False):
+                        borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                     
 
 
@@ -2850,37 +2930,38 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_metadefender_dom = None
                     report_hybrid_analysis_dom = None
 
-                    
-                    urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("URLScan", False):
+                        urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
 
-                    is_domain_ioc = is_domain(entry)
-                    report_hybrid_analysis_dom = None
-                    
-                    print(f"Detected domain: {entry}. Using Hybrid-Analysis /search/terms endpoint.")
-                    report_hybrid_analysis_dom = search_hybrid_analysis_by_term(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    # else:
-                    #     print(f"Detected URL: {entry}. Using Hybrid-Analysis /quick-scan/url endpoint.")
-                    #     # submission_id, finished = submit_url_to_hybrid_analysis(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("Hybrid-Analysis", False):
+                        is_domain_ioc = is_domain(entry)
+                        report_hybrid_analysis_dom = None
+                        
+                        print(f"Detected domain: {entry}. Using Hybrid-Analysis /search/terms endpoint.")
+                        report_hybrid_analysis_dom = search_hybrid_analysis_by_term(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
+                        # else:
+                        #     print(f"Detected URL: {entry}. Using Hybrid-Analysis /quick-scan/url endpoint.")
+                        #     # submission_id, finished = submit_url_to_hybrid_analysis(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
+                        
+                        if progress_bar:
+                            progress_bar.value += 1
                 
-                    
-                    report_vt_dom = get_domain_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("VirusTotal", False):
+                        report_vt_dom = get_domain_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                 
+                    if api_config.get("IPQualityScore", False):
+                        report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                 
-                    report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("AlienVault", False):
+                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                 
                 
                     # if url_id:
@@ -2889,24 +2970,24 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     #     if progress_bar:
                     #         progress_bar.value += 1
                 
-                    
-                        if urlscan_uuid:
-                            report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
-                            if progress_bar:
-                                progress_bar.value += 1
-                    
-                        else:
-                            report_urlscan = None
+                        if api_config.get("Urlscan", False):
+                            if urlscan_uuid:
+                                report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
+                                if progress_bar:
+                                    progress_bar.value += 1
+                        
+                            else:
+                                report_urlscan = None
 
+                    if api_config.get("BinaryEdge", False):
+                        report_binaryedge_dom = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                 
-                    report_binaryedge_dom = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-                
-                    report_metadefender_dom = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("MetaDefender", False):
+                        report_metadefender_dom = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                     
                 
                     # Check if the domain is resolving
@@ -2915,10 +2996,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         #combined_report += f"Verdict: Not Malicious (Domain Not Resolving)\n\n"
                         #continue  # Skip further checks for this URL as it's not resolving
                         
-                    
-                    borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("Borealis", False):
+                        borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                     
 
 
@@ -3207,44 +3288,44 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_hybrid_analysis = None
                     report_malshare = None
 
-                    
-                    report_vt_hash = get_hash_report(entry, status_output, progress_bar)
-                  # print(json.dumps(report_vt_hash, indent=4))
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("VirusTotal", False):
+                        report_vt_hash = get_hash_report(entry, status_output, progress_bar)
+                      # print(json.dumps(report_vt_hash, indent=4))
+                        if progress_bar:
+                            progress_bar.value += 1
                 
 
-                
-                    report_malwarebazaar = get_malwarebazaar_hash_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
-                
-
-                
-                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("MalwareBazaar", False):
+                        report_malwarebazaar = get_malwarebazaar_hash_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                 
 
-                    
-                    report_metadefender_hash = analyze_with_metadefender(entry, ioc_type="hash", metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("AlienVault", False):
+                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                 
 
-                
-                # Fetch Hybrid Analysis report
-                    report_hybrid_analysis = get_hybrid_analysis_hash_report(entry, status_output, progress_bar)
-                    #print("DEBUG: Report returned from get_hybrid_analysis_hash_report:", report_hybrid_analysis)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("MetaDefender", False):
+                        report_metadefender_hash = analyze_with_metadefender(entry, ioc_type="hash", metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                 
 
+                    if api_config.get("Hybrid-Analysis", False):
+                        # Fetch Hybrid Analysis report
+                        report_hybrid_analysis = get_hybrid_analysis_hash_report(entry, status_output, progress_bar)
+                        #print("DEBUG: Report returned from get_hybrid_analysis_hash_report:", report_hybrid_analysis)
+                        if progress_bar:
+                            progress_bar.value += 1
                 
-                # Fetch Malshare Hash Report
-                    report_malshare = get_malshare_hash_report(entry, status_output, progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+
+                    if api_config.get("Malshare", False):
+                        # Fetch Malshare Hash Report
+                        report_malshare = get_malshare_hash_report(entry, status_output, progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                     
                 
                     breakdown_str = ""
@@ -3563,26 +3644,27 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_shodan_cve = None
                     report_censys_cve = None
 
-
-                    # Fetch the MITRE CVE report
-                    report_mitre_cve = get_mitre_cve_details(entry, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("MITRE", False):
+                        # Fetch the MITRE CVE report
+                        report_mitre_cve = get_mitre_cve_details(entry, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
 
                 
                     # Fetch the Shodan CVE report
-                
-                    report_shodan_cve = search_shodan_cve_country(entry, selected_country, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("Shodan", False):
+                        report_shodan_cve = search_shodan_cve_country(entry, selected_country, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
             
                     # Debugging the report retrieved from Shodan
                     #print(f"DEBUG: Full Shodan CVE Report: {json.dumps(report_shodan_cve, indent=2)}")
-            
-                    # Fetch the Censys CVE report
-                    report_censys_cve = search_cves_on_censys(censys_api_key, censys_secret, entry, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+
+                    if api_config.get("Censys", False):
+                        # Fetch the Censys CVE report
+                        report_censys_cve = search_cves_on_censys(censys_api_key, censys_secret, entry, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
 
                     #print(f"DEBUG: Full Censys CVE Report: {json.dumps(report_censys_cve, indent=2)}")
                                     
@@ -3779,17 +3861,17 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     orgs = selected_category.get("orgs", [])
                     org_name = orgs[0] if orgs else "N/A"
                     
-                    
-                    report_shodan_org = search_shodan_org(org_name, status_output=status_output, progress_bar=progress_bar)
-                    #print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("Shodan", False):
+                        report_shodan_org = search_shodan_org(org_name, status_output=status_output, progress_bar=progress_bar)
+                        #print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
+                        if progress_bar:
+                            progress_bar.value += 1
             
-                
-                    report_censys_org = search_censys_org(censys_api_key, censys_secret, org_name, status_output=status_output, progress_bar=progress_bar)
-                    #print(f"DEBUG: search_censys_org returned: {report_censys_org}")
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("Censys", False):
+                        report_censys_org = search_censys_org(censys_api_key, censys_secret, org_name, status_output=status_output, progress_bar=progress_bar)
+                        #print(f"DEBUG: search_censys_org returned: {report_censys_org}")
+                        if progress_bar:
+                            progress_bar.value += 1
                 
                     
                 
@@ -3934,24 +4016,25 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         # Use the selected country from the UI, and don't filter if "All" is selected
                         selected_country = selected_country if selected_country != 'All' else None
     
-                        
-                        # Perform port search on Shodan, passing the selected country if applicable
-                        report_shodan_port = search_shodan_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                        if api_config.get("Shodan", False):
+                            # Perform port search on Shodan, passing the selected country if applicable
+                            report_shodan_port = search_shodan_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
                     
                 
-                    
-                        # Perform port search on Censys, passing the selected country if applicable
-                        report_censys_port = search_censys_by_port(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                        #print(f"DEBUG: search_censys_by_port returned: {report_censys_port}")
-                        if progress_bar:
-                            progress_bar.value += 1
-    
-                        print(f"DEBUG: Calling BinaryEdge for port {entry} in {selected_country}")
-                        report_binaryedge_port = search_binaryedge_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                        if api_config.get("Censys", False):
+                            # Perform port search on Censys, passing the selected country if applicable
+                            report_censys_port = search_censys_by_port(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                            #print(f"DEBUG: search_censys_by_port returned: {report_censys_port}")
+                            if progress_bar:
+                                progress_bar.value += 1
+
+                        if api_config.get("BinaryEdge", False):
+                            print(f"DEBUG: Calling BinaryEdge for port {entry} in {selected_country}")
+                            report_binaryedge_port = search_binaryedge_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
                     
                         
                     
@@ -4152,23 +4235,25 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_shodan_product = None
                     selected_country = selected_country if selected_country != 'All' else None
                 
-                    
-                    # Perform product search on Shodan
-                    report_shodan_product = search_shodan_product_country(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                    
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("Shodan", False):
+                        # Perform product search on Shodan
+                        report_shodan_product = search_shodan_product_country(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                        
+                        if progress_bar:
+                            progress_bar.value += 1
 
-                    # Perform product search on Censys
-                    report_censys_product = search_censys_product_country(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                    #print(f"DEBUG: Type of report_censys_product: {type(report_censys_product)}")
-                    #print(f"DEBUG: Content of report_censys_product: {report_censys_product}")                    
-                    if progress_bar:
-                        progress_bar.value += 1
-
-                    report_binaryedge_product = search_binaryedge_product(entry, status_output=status_output, progress_bar=progress_bar)
-                    if progress_bar:
-                        progress_bar.value += 1
+                    if api_config.get("Censys", False):
+                        # Perform product search on Censys
+                        report_censys_product = search_censys_product_country(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                        #print(f"DEBUG: Type of report_censys_product: {type(report_censys_product)}")
+                        #print(f"DEBUG: Content of report_censys_product: {report_censys_product}")                    
+                        if progress_bar:
+                            progress_bar.value += 1
+                            
+                    if api_config.get("BinaryEdge", False):
+                        report_binaryedge_product = search_binaryedge_product(entry, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                     
 
                     total_score = 0
@@ -4372,30 +4457,32 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         report_binaryedge_product_port = None
                 
                         print(f"DEBUG: Processing product-port combination search for '{product}' with port '{port}' in country '{selected_country}'")
-                
-                        # Perform product-port-country search on Shodan
-                        report_shodan_product_port = search_shodan_product_port_country(
-                            product, port=port, country=selected_country,
-                            status_output=status_output, progress_bar=progress_bar
-                        )
-                        if progress_bar:
-                            progress_bar.value += 1
-                
-                        # Perform product-port-country search on Censys
-                        report_censys_product_port = search_censys_product_port_country(
-                            censys_api_key, censys_secret, product, port=port,
-                            country=selected_country, status_output=status_output, progress_bar=progress_bar
-                        )
-                        if progress_bar:
-                            progress_bar.value += 1
-                
-                        # Perform product-port search on BinaryEdge (if applicable)
-                        report_binaryedge_product_port = search_binaryedge_product_port_country(
-                            product, port=port, country=selected_country,
-                            status_output=status_output, progress_bar=progress_bar
-                        )
-                        if progress_bar:
-                            progress_bar.value += 1
+                        if api_config.get("Shodan", False):
+                            # Perform product-port-country search on Shodan
+                            report_shodan_product_port = search_shodan_product_port_country(
+                                product, port=port, country=selected_country,
+                                status_output=status_output, progress_bar=progress_bar
+                            )
+                            if progress_bar:
+                                progress_bar.value += 1
+
+                        if api_config.get("Censys", False):
+                            # Perform product-port-country search on Censys
+                            report_censys_product_port = search_censys_product_port_country(
+                                censys_api_key, censys_secret, product, port=port,
+                                country=selected_country, status_output=status_output, progress_bar=progress_bar
+                            )
+                            if progress_bar:
+                                progress_bar.value += 1
+
+                        if api_config.get("BinaryEdge", False):
+                            # Perform product-port search on BinaryEdge (if applicable)
+                            report_binaryedge_product_port = search_binaryedge_product_port_country(
+                                product, port=port, country=selected_country,
+                                status_output=status_output, progress_bar=progress_bar
+                            )
+                            if progress_bar:
+                                progress_bar.value += 1
                 
                         # Calculate verdict and score breakdown
                         total_score, score_breakdown, verdict = calculate_total_malicious_score(
@@ -4542,6 +4629,17 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
     else:
         # Skip the Top Malicious IOCs section if fewer than 2 malicious IOCs are scanned
         final_report = aggregated_report
+
+    # Finalize combined report
+    if single_validation_source == "Shodan":
+        combined_report += "--- End of Shodan Combined Report ---\n"
+
+        # Output combined report
+        if output_file_path:
+            with open(output_file_path, "w") as outfile:
+                outfile.write(combined_report)
+
+        return combined_report
 
     if output_file_path:
         with open(output_file_path, "w") as outfile:

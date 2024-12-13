@@ -172,7 +172,9 @@ def process_hybrid_analysis_report(json_response):
     print_hybrid_analysis_report(longest_report)
 
 def parse_hybrid_analysis_report(report):
-    if isinstance(report, list) and report:  # Handle non-empty list
+    if report is None:  # Handle None explicitly
+        return None  # Or return a suitable default, e.g., "No report available"
+    elif isinstance(report, list) and report:  # Handle non-empty list
         primary_report = report[0]  # Use the first report if it's a list
         return extract_report_data(primary_report)
     elif isinstance(report, list) and not report:  # Handle empty list
