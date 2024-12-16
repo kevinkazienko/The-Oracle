@@ -69,13 +69,27 @@ from api_interactions.malshare import get_malshare_hash_report
 # Configure logging to file
 #logging.basicConfig(filename='debug.log', level=logging.DEBUG)
 
-
 # Load the API configuration
-with open("config.json", "r") as config_file:
-    api_config = json.load(config_file)["enabled_apis"]
+# with open("config.json", "r") as config_file:
+#     api_config = json.load(config_file)["enabled_apis"]
+# def load_api_config():
+#     with open("config.json", "r") as config_file:
+#         return json.load(config_file)["enabled_apis"]
+
+def get_enabled_apis():
+    """
+    Retrieve a list of enabled APIs dynamically.
+    """
+    api_config = load_api_config()
+    return [api for api, enabled in api_config.items() if enabled]
+
 def load_api_config():
-    with open("config.json", "r") as config_file:
-        return json.load(config_file)["enabled_apis"]
+    try:
+        with open("config.json", "r") as config_file:
+            return json.load(config_file)["enabled_apis"]
+    except (FileNotFoundError, KeyError, json.JSONDecodeError) as e:
+        print(f"Error reading config.json: {e}")
+        return {}
 
 
 def safe_join(separator, items):
@@ -493,8 +507,9 @@ trusted_asn_list = {
     "Amazon": 16509, 
     "Amazon": 14618,
     "Microsoft": 8075,
-    "Akamai": 21342,
-    "Akamai": 20940,
+    # "Akamai Technologies, Inc.": 21342,
+    # "Akamai Technologies, Inc.": 20940,
+    # "Akamai Technologies, Inc.": 16625,
     "Bell": 577
     #"Shodan": 20473,  # Shodan is trusted but does not count towards malicious score.
 }
@@ -519,6 +534,7 @@ def check_trusted_provider(asn, organization, isp):
         # "AS21342": "Akamai Technologies, Inc.",
         # "AS20940": "Akamai Technologies, Inc.",
         # "AS21342 (Akamai International B.V.)": "Akamai Technologies, Inc.",
+        # "AS16625": "Akamai Technologies, Inc.",
         # Add other ASNs or organizations as needed
     }
 
@@ -547,9 +563,9 @@ def check_trusted_provider(asn, organization, isp):
         "Amazon": ["Amazon", "amazonaws.com", "amazon.com", "amazon", "AMAZON-AES", "Amazon.com", "Amazon Data Services NoVa"],
         "Google": ["Google", "GOOGLE", "google.com", "google.ca", "GOOGLE-CLOUD-PLATFORM", "google", "AS15169 google llc"],
         "Cloudflare": ["Cloudflare", "CLOUDFLARENET", "AS13335 cloudflare", "cloudflare"],
-        "Microsoft": ["Microsoft", "MICROSOFT-CORP"],
-        "Bell": ["Bell Canada", "BACOM", "bell canada", "AS577 bell canada"]
-        # "Akamai Technologies, Inc.": ["akamai", "akamaiedge", "AS21342 (Akamai International B.V.)"],
+        "Microsoft": ["Microsoft", "MICROSOFT-CORP", "MICROSOFT-CORP-MSN-AS-BLOCK"],
+        "Bell": ["Bell Canada", "BACOM", "bell canada", "AS577 bell canada"],
+        # "Akamai Technologies, Inc.": ["akamai", "akamaiedge", "AS21342 (Akamai International B.V.)", "Akamai Technologies", "AS20940 akamai international b.v."],
         # Add other trusted providers as needed
     }
 
@@ -563,9 +579,9 @@ def check_trusted_provider(asn, organization, isp):
         return "Cloudflare"
     elif "google" in organization or "google" in isp:
         return "Google"
-    elif "microsoft" in organization or "microsoft" in isp:
+    elif "microsoft" in organization or "microsoft" in isp or "MICROSOFT-CORP-MSN-AS-BLOCK" in isp:
         return "Microsoft"
-    # elif "Akamai Technologies, Inc." in organization or "Akamai International B.V." in organization or "Akamai" in isp:
+    # elif "Akamai Technologies, Inc." in organization or "Akamai International B.V." in organization or "Akamai Technologies" in organization or "Akamai Technologies" or "AKAMAI-AS" in organization in isp or "Akamai" in isp or "Akamai Technologies, Inc." in isp:
     #     return "Akamai Technologies, Inc."
 
     # Check each provider and its variations
@@ -603,7 +619,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
     recent_analysis_weight_boost = 1.2  # Adjust weight by 20% if analysis is recent
     last_analysis_date = None
     # Define the threshold at the top of the script or within the scoring function
-    high_malicious_count_threshold = 3
+    high_malicious_count_threshold = 4
     if not reports or not isinstance(reports, dict):
         # Default fallback values
         return 0, {}, "Not Malicious"
@@ -628,13 +644,13 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
         "IPQualityScore": 1,
         "MalwareBazaar": 1,
         "URLScan": 1,
-        "BinaryEdge": 1,
-        "MetaDefender": 1,
+        "BinaryEdge": .5,
+        "MetaDefender": .5,
         "AUWL": 1,
         "TOP1MILLION": 1,
         "ALPHABETSOUP": 1,
         "STONEWALL": 1,
-        "Hybrid-Analysis": 1,
+        "Hybrid-Analysis": .5,
         "Censys": 1,
         # Adjust weights as necessary for new vendors or specific cases
     }
@@ -1453,8 +1469,8 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                     vt_report = reports['VirusTotal']
                     malicious_count, suspicious_count, last_analysis_date_formatted, crowdsourced_context, tags, registrar, creation_date = extract_vt_analysis(vt_report)
                 
-                    malicious_count = malicious_count if malicious_count is not None else 0
-                    suspicious_count = suspicious_count if suspicious_count is not None else 0
+                    malicious_count = malicious_count or 0
+                    suspicious_count = suspicious_count or 0
                 
                     # Calculate and add VirusTotal score directly without max score limit
                     vt_score = (malicious_count * 1) + (suspicious_count * 0.5)
@@ -1587,7 +1603,7 @@ def calculate_total_malicious_score(reports, borealis_report, ioc_type, status_o
                     if isinstance(hybrid_analysis_report, dict):
                         # Extract relevant fields
                         file_name = hybrid_analysis_report.get("submit_name", hybrid_analysis_report.get("file_name", "N/A"))
-                        threat_score = hybrid_analysis_report.get("threat_score") or 0
+                        threat_score = hybrid_analysis_report.get("threat_score", 0)
                         verdict = hybrid_analysis_report.get("verdict", "N/A")
                         classification_tags = ', '.join(hybrid_analysis_report.get("classification_tags", [])) if hybrid_analysis_report.get("classification_tags") else "None"
                         vx_family = hybrid_analysis_report.get("vx_family", "N/A")
@@ -2062,6 +2078,9 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
     popularity_str = 'N/A'
     categories = 'N/A'
     vt_report = None
+    # Dynamically load the API configuration
+    api_config = load_api_config()
+
     
 
     # Ensure selected_category is not None
@@ -2098,7 +2117,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
 
     # Define the number of API calls per source for each category
     api_calls_per_source = {
-        "VirusTotal": {"ips": 1, "urls": 2, "domains": 1, "hashes": 1},
+        "VirusTotal": {"ips": 1, "urls": 1, "domains": 1, "hashes": 1},
         "AlienVault": {"ips": 1, "urls": 1, "domains": 1, "hashes": 1},
         "HybridAnalysis": {"ips": 1, "urls": 1, "domains": 1, "hashes": 1},
 		"AlienVault": {"ips": 1, "urls": 1, "domains": 1, "hashes": 1},
@@ -2109,7 +2128,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
         "Censys": {"ips": 1, "cves": 1, "orgs": 1, "ports": 1, "prods": 1, "product_port_combinations": 1},
         "Malshare": {"hashes": 1},
         "MITRE": {"cves": 1},
-        "URLScan": {"urls": 2, "domains": 2},
+        "URLScan": {"urls": 1, "domains": 1},
         "BinaryEdge": {"ips": 1, "urls": 1, "domains": 1, "ports": 1, "prods": 1, "product_port_combinations": 1},
         "MetaDefender": {"ips": 1, "urls": 1, "domains": 1},
         "Borealis": {"ips": 1, "urls": 1, "domains": 1}
@@ -2130,7 +2149,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
     if progress_bar:
         progress_bar.max = total_api_calls
         progress_bar.value = 0  # Reset progress to 0
-        
+
 
     # Determine if only one validation source is active
     active_sources = [source for source, enabled in api_config.items() if enabled]
@@ -2138,23 +2157,24 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
         single_validation_source = active_sources[0]
     else:
         single_validation_source = None
-        
+
+    
 
     for category, entries in selected_category.items():
         if entries:  # Only process if there are entries in the category
             print(f"Processing {category.upper()}...")
+
             
             individual_combined_reports[category] = []
             ioc_type = category.rstrip('s')  # Converts 'ips' to 'ip', 'urls' to 'url', etc.
 
-            # Single report for all IoCs if only one validation source is active
-            #if single_validation_source:
             combined_report = ""
             
             # # Calculate dynamic progress step based on the total number of reports
             # progress_step = 100 / total_reports if total_reports > 0 else 1
     
             for count, entry in enumerate(entries, start=1):
+                country_code = "N/A"
                 breakdown = []
                 if status_output:
                     clear_output(wait=True)
@@ -2164,7 +2184,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                 print(f"\nScanning {category.capitalize()} [{count}/{len(entries)}]: {sanitize_and_defang(entry)}")
 
                 #combined_report = f"Analysis for {sanitize_and_defang(entry)} ({category.upper()}):\n\n"
-                #combined_report = ""
+                
                 
                 if category == "ips":
                     trusted_provider_found = []
@@ -2178,9 +2198,9 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_binaryedge_ip = None
                     report_metadefender_ip = None
                     report_hybrid_analysis_ip = None
+                    borealis_report = None
 
-                    #if single_validation_source== "Shodan":
-                    if single_validation_source:
+                    if single_validation_source == "Shodan":
                         # Process all IPs with Shodan-specific logic
                         report_shodan = get_shodan_report(entry, status_output, progress_bar)
                         if progress_bar:
@@ -2250,7 +2270,7 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             report_metadefender_ip = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
                             if progress_bar:
                                 progress_bar.value += 1
-
+    
                         if api_config.get("Hybrid-Analysis", False):
                             report_hybrid_analysis_ip = search_hybrid_analysis_by_term(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
                             if progress_bar:
@@ -2427,6 +2447,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             
                             # Append the VirusTotal report to the combined report
                             combined_report += f"VirusTotal Report:\n{vt_result}\n"
+                        else:
+                            combined_report += ""
                         
         
                         # AbuseIPDB Report
@@ -2467,7 +2489,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
     
                             combined_report += "\n"
                         else:
-                            combined_report += "AbuseIPDB Report:\nN/A\n\n"
+                            # combined_report += "AbuseIPDB Report:\nN/A\n\n"
+                            combined_report += ""
     
                         
         
@@ -2487,7 +2510,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             else:
                                 combined_report += f"Shodan Report:\n{sanitize_and_defang(shodan_report)}\n\n"
                         else:
-                            combined_report += f"Shodan Report:\nN/A\n\n"
+                            # combined_report += f"Shodan Report:\nN/A\n\n"
+                            combined_report += ""
     
                         
         
@@ -2503,7 +2527,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             match = re.search(r'Country Code:\s+(\w+)', report_ipqualityscore)
                             country_code = match.group(1) if match else 'N/A'  # Get the country code if it exists
                         else:
-                            combined_report += "IPQualityScore Report: No data available\n\n"
+                            # combined_report += "IPQualityScore Report: No data available\n\n"
+                            combined_report += ""
                         
                             
         
@@ -2511,7 +2536,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         if isinstance(report_alienvault, dict):
                             combined_report += format_alienvault_report(report_alienvault) + "\n\n"
                         else:
-                            combined_report += "AlienVault OTX Report:\nN/A\n\n"
+                            # combined_report += "AlienVault OTX Report:\nN/A\n\n"
+                            combined_report += ""
                         
         
                         # GreyNoise Report
@@ -2527,7 +2553,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             combined_report += f"  - First Seen: {report_greynoise.get('first_seen', 'N/A')}\n"
                             combined_report += f"  - Last Seen: {last_analysis_date}\n\n"
                         else:
-                            combined_report += "GreyNoise Report:\nN/A\n\n"
+                            # combined_report += "GreyNoise Report:\nN/A\n\n"
+                            combined_report += ""
                         
         
                         # Censys Report
@@ -2548,7 +2575,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                 combined_report += f"    - Port: {service.get('port', 'N/A')}, Service Name: {service.get('service_name', 'N/A')}, Observed At: {service.get('observed_at', 'N/A')}\n"
                             combined_report += f"  - Last Updated: {report_censys.get('last_updated', 'N/A')}\n\n"
                         else:
-                            combined_report += "Censys Report:\nN/A\n\n"
+                            # combined_report += "Censys Report:\nN/A\n\n"
+                            combined_report += ""
                         
     
                         # BinaryEdge Report
@@ -2556,7 +2584,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             parsed_binaryedge_info = parse_binaryedge_report(report_binaryedge_ip, "ip")
                             combined_report += f"BinaryEdge Report:\n{sanitize_and_defang(parsed_binaryedge_info)}\n\n"
                         else:
-                            combined_report += "BinaryEdge Report:\n  - No relevant data found.\n\n"
+                            # combined_report += "BinaryEdge Report:\n  - No relevant data found.\n\n"
+                            combined_report += ""
                         
     
                         
@@ -2564,7 +2593,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         if report_metadefender_ip:
                             combined_report += f"{sanitize_and_defang(report_metadefender_ip)}\n\n"
                         else:
-                            combined_report += "Metadefender Report:\n  - No relevant data found.\n\n"
+                            # combined_report += "Metadefender Report:\n  - No relevant data found.\n\n"
+                            combined_report += ""
     
                         # Hybrid-Analysis Report
                         if report_hybrid_analysis_ip:
@@ -2573,7 +2603,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                 print(f"DEBUG: Parsed Hybrid-Analysis Report (IP):\n{hybrid_analysis_report_str}")
                             combined_report += f"Hybrid-Analysis Report (IP):\n{hybrid_analysis_report_str}\n\n"
                         else:
-                            combined_report += "Hybrid-Analysis Report (IP): No results found.\n\n"
+                            # combined_report += "Hybrid-Analysis Report (IP): No results found.\n\n"
+                            combined_report += ""
                         
     
                         # Format and append the Borealis report to the combined report
@@ -2581,7 +2612,8 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                             formatted_borealis_report = format_borealis_report(borealis_report, ioc_type="ip", request=entry)
                             combined_report += f"{sanitize_and_defang(formatted_borealis_report)}\n\n"
                         else:
-                            combined_report += "Borealis Report:\nN/A\n\n"
+                            # combined_report += "Borealis Report:\nN/A\n\n"
+                            combined_report += ""
                 
     
                         # combined_report += f"Verdict: {verdict} (Score: {total_score})\n\nScore Breakdown\n{breakdown}\n\n"
@@ -2604,10 +2636,10 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_metadefender_url = None
                     report_hybrid_analysis_url = None
 
-                    if api_config.get("URLScan", False):
-                        urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
 
                     # is_domain_ioc = is_domain(entry)
                     # report_hybrid_analysis = None
@@ -2616,77 +2648,76 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     #     print(f"Detected domain: {entry}. Using Hybrid-Analysis /search/terms endpoint.")
                     #     report_hybrid_analysis = search_hybrid_analysis_by_term(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
                     # else:
-                    if api_config.get("Hybrid-Analysis", False):
-                        print(f"Detected URL: {entry}. Using Hybrid-Analysis /quick-scan/url endpoint.")
-                        submission_id, finished = submit_url_to_hybrid_analysis(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
-                    
-                        if submission_id:
-                            if finished:
-                                # Fetch the report directly since it's already complete
-                                print("Quick-scan analysis is already completed. Fetching the report directly.")
-                                results_url = f"{HYBRID_ANALYSIS_BASE_URL}/quick-scan/{submission_id}"
-                                headers = {
-                                    "accept": "application/json",
-                                    "api-key": hybridanalysis_api_key
-                                }
-                                response = requests.get(results_url, headers=headers)
-                                if response.status_code == 200:
-                                    report_hybrid_analysis_url = response.json()
-                                else:
-                                    print(f"Failed to fetch completed quick-scan report. HTTP {response.status_code}: {response.text}")
-                                    report_hybrid_analysis_url = None
+                    print(f"Detected URL: {entry}. Using Hybrid-Analysis /quick-scan/url endpoint.")
+                    submission_id, finished = submit_url_to_hybrid_analysis(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
+                
+                    if submission_id:
+                        if finished:
+                            # Fetch the report directly since it's already complete
+                            print("Quick-scan analysis is already completed. Fetching the report directly.")
+                            results_url = f"{HYBRID_ANALYSIS_BASE_URL}/quick-scan/{submission_id}"
+                            headers = {
+                                "accept": "application/json",
+                                "api-key": hybridanalysis_api_key
+                            }
+                            response = requests.get(results_url, headers=headers)
+                            if response.status_code == 200:
+                                report_hybrid_analysis_url = response.json()
                             else:
-                                # Poll for the report if the analysis is still in progress
-                                print("Quick-scan analysis is in progress. Polling for the final report.")
-                                report_hybrid_analysis_url = fetch_hybrid_analysis_report(
-                                    submission_id, status_output=status_output, progress_bar=progress_bar
-                                )
+                                print(f"Failed to fetch completed quick-scan report. HTTP {response.status_code}: {response.text}")
+                                report_hybrid_analysis_url = None
                         else:
-                            report_hybrid_analysis = None  # No submission ID, so no report
-                        
+                            # Poll for the report if the analysis is still in progress
+                            print("Quick-scan analysis is in progress. Polling for the final report.")
+                            report_hybrid_analysis_url = fetch_hybrid_analysis_report(
+                                submission_id, status_output=status_output, progress_bar=progress_bar
+                            )
+                    else:
+                        report_hybrid_analysis = None  # No submission ID, so no report
+                    
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                    
+                    url_id = submit_url_for_analysis(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    if url_id:
+                        time.sleep(16)
+                        report_vt_url = get_url_report(url_id, status_output, progress_bar)
                         if progress_bar:
                             progress_bar.value += 1
                 
-                    if api_config.get("VirusTotal", False):
-                        url_id = submit_url_for_analysis(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                
-                    if api_config.get("IPQualityScore", False):
-                        report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                
-                    if api_config.get("AlienVault", False):
-                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
-                
-                    if api_config.get("VirusTotal", False):
-                        if url_id:
-                            time.sleep(16)
-                            report_vt_url = get_url_report(url_id, status_output, progress_bar)
+                    
+                        if urlscan_uuid:
+                            report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
                             if progress_bar:
                                 progress_bar.value += 1
-                
-                        if api_config.get("URLScan", False):
-                            if urlscan_uuid:
-                                report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
-                                if progress_bar:
-                                    progress_bar.value += 1
-                        
-                            else:
-                                report_urlscan = None
+                    
+                        else:
+                            report_urlscan = None
 
-                    if api_config.get("BinaryEdge", False):
-                        report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
                 
-                    if api_config.get("MetaDefender", False):
-                        report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                    report_binaryedge_url = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_metadefender_url = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                     
                 
                     # Check if the domain is resolving
@@ -2695,17 +2726,17 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         #combined_report += f"Verdict: Not Malicious (Domain Not Resolving)\n\n"
                         #continue  # Skip further checks for this URL as it's not resolving
                         
-                    if api_config.get("Borealis", False):
-                        borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                     
 
 
                     # List of reports to check for trusted provider (URLScan, AlienVault, IPQualityScore)
                     all_reports = [
                         ("URLScan", report_urlscan),
-                        ("AlienVault", report_alienvault),
+                        # ("AlienVault", report_alienvault),
                         ("IPQualityScore", report_ipqualityscore)
                     ]
 
@@ -2745,18 +2776,18 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                     trusted_provider_found.append(provider)
                                     breakdown.append(f"IPQualityScore Trusted Provider Detected: {provider}")
                                     
-                            elif vendor == "AlienVault":
-                                if isinstance(report, dict):
-                                    asn = report.get("ASN", "")
-                                    isp = report.get("isp", "")
-                                    # Check trusted provider for AlienVault
-                                    provider = check_trusted_provider(asn, "", isp)
-                                    if provider:
-                                        trusted_provider_found = provider
-                                        breakdown.append(f"AlienVault Trusted Provider Detected: {provider}")
-                                else:
-                                    asn = ""
-                                    isp = ""
+                            # elif vendor == "AlienVault":
+                            #     if isinstance(report, dict):
+                            #         asn = report.get("ASN", "")
+                            #         isp = report.get("ISP", "")
+                            #         # Check trusted provider for AlienVault
+                            #         provider = check_trusted_provider(asn, "", isp)
+                            #         if provider:
+                            #             trusted_provider_found = provider
+                            #             breakdown.append(f"AlienVault Trusted Provider Detected: {provider}")
+                            #     else:
+                            #         asn = ""
+                            #         isp = ""
                 
                     # After looping through all reports, combine the trusted providers
                     if trusted_provider_found:
@@ -2930,38 +2961,37 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_metadefender_dom = None
                     report_hybrid_analysis_dom = None
 
-                    if api_config.get("URLScan", False):
-                        urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    urlscan_uuid = submit_url_to_urlscan(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
 
-                    if api_config.get("Hybrid-Analysis", False):
-                        is_domain_ioc = is_domain(entry)
-                        report_hybrid_analysis_dom = None
-                        
-                        print(f"Detected domain: {entry}. Using Hybrid-Analysis /search/terms endpoint.")
-                        report_hybrid_analysis_dom = search_hybrid_analysis_by_term(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
-                        # else:
-                        #     print(f"Detected URL: {entry}. Using Hybrid-Analysis /quick-scan/url endpoint.")
-                        #     # submission_id, finished = submit_url_to_hybrid_analysis(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
-                        
-                        if progress_bar:
-                            progress_bar.value += 1
+                    is_domain_ioc = is_domain(entry)
+                    report_hybrid_analysis_dom = None
+                    
+                    print(f"Detected domain: {entry}. Using Hybrid-Analysis /search/terms endpoint.")
+                    report_hybrid_analysis_dom = search_hybrid_analysis_by_term(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
+                    # else:
+                    #     print(f"Detected URL: {entry}. Using Hybrid-Analysis /quick-scan/url endpoint.")
+                    #     # submission_id, finished = submit_url_to_hybrid_analysis(entry, ioc_type, status_output=status_output, progress_bar=progress_bar)
+                    
+                    if progress_bar:
+                        progress_bar.value += 1
                 
-                    if api_config.get("VirusTotal", False):
-                        report_vt_dom = get_domain_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    report_vt_dom = get_domain_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                 
-                    if api_config.get("IPQualityScore", False):
-                        report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
                 
-                    if api_config.get("AlienVault", False):
-                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                    report_ipqualityscore = get_ipqualityscore_report(entry, full_report=True, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                 
                 
                     # if url_id:
@@ -2970,24 +3000,24 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     #     if progress_bar:
                     #         progress_bar.value += 1
                 
-                        if api_config.get("Urlscan", False):
-                            if urlscan_uuid:
-                                report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
-                                if progress_bar:
-                                    progress_bar.value += 1
-                        
-                            else:
-                                report_urlscan = None
+                    
+                        if urlscan_uuid:
+                            report_urlscan = get_urlscan_report(urlscan_uuid, status_output=status_output, progress_bar=progress_bar)
+                            if progress_bar:
+                                progress_bar.value += 1
+                    
+                        else:
+                            report_urlscan = None
 
-                    if api_config.get("BinaryEdge", False):
-                        report_binaryedge_dom = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
                 
-                    if api_config.get("MetaDefender", False):
-                        report_metadefender_dom = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                    report_binaryedge_dom = get_binaryedge_report(entry, ioc_type=ioc_type, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
+                
+                
+                    report_metadefender_dom = analyze_with_metadefender(entry, ioc_type=ioc_type, metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                     
                 
                     # Check if the domain is resolving
@@ -2996,17 +3026,17 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         #combined_report += f"Verdict: Not Malicious (Domain Not Resolving)\n\n"
                         #continue  # Skip further checks for this URL as it's not resolving
                         
-                    if api_config.get("Borealis", False):
-                        borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    borealis_report = request_borealis(entry, status_output=status_output, ioc_type=ioc_type, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                     
 
 
                     # List of reports to check for trusted provider (URLScan, AlienVault, IPQualityScore)
                     all_reports = [
                         ("URLScan", report_urlscan),
-                        ("AlienVault", report_alienvault),
+                        # ("AlienVault", report_alienvault),
                         ("IPQualityScore", report_ipqualityscore)
                     ]
 
@@ -3046,18 +3076,18 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                     trusted_provider_found.append(provider)
                                     breakdown.append(f"IPQualityScore Trusted Provider Detected: {provider}")
                                     
-                            elif vendor == "AlienVault":
-                                if isinstance(report, dict):
-                                    asn = report.get("ASN", "")
-                                    isp = report.get("isp", "")
-                                    # Check trusted provider for AlienVault
-                                    provider = check_trusted_provider(asn, "", isp)
-                                    if provider:
-                                        trusted_provider_found = provider
-                                        breakdown.append(f"AlienVault Trusted Provider Detected: {provider}")
-                                else:
-                                    asn = ""
-                                    isp = ""
+                            # elif vendor == "AlienVault":
+                            #     if isinstance(report, dict):
+                            #         asn = report.get("ASN", "")
+                            #         isp = report.get("ISP", "")
+                            #         # Check trusted provider for AlienVault
+                            #         provider = check_trusted_provider(asn, "", isp)
+                            #         if provider:
+                            #             trusted_provider_found = provider
+                            #             breakdown.append(f"AlienVault Trusted Provider Detected: {provider}")
+                            #     else:
+                            #         asn = ""
+                            #         isp = ""
                 
                     # After looping through all reports, combine the trusted providers
                     if trusted_provider_found:
@@ -3137,12 +3167,12 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                                 ])
                                 last_downloaded_file_info = f"Downloaded Files:\n{downloaded_files_str}"
                             else:
-                                last_downloaded_file_info = "No downloaded files found.\n"
+                                last_downloaded_file_info = "No downloaded files found."
                     
                             # Build the report
                             vt_result = (
                                 f"VirusTotal Domain Report:\n"
-                                f"  - IOC: {entry}\n"
+                                f"  - IOC: {sanitize_and_defang(entry)}\n"
                                 f"  - Harmless: {harmless}, Malicious: {malicious}, Suspicious: {suspicious}, Timeout: {timeout}, Undetected: {undetected}\n"
                                 f"  - Malicious Vendors: {', '.join(malicious_vendors) or 'None'}\n"
                                 f"  - Suspicious Vendors: {', '.join(suspicious_vendors) or 'None'}\n"
@@ -3288,44 +3318,44 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_hybrid_analysis = None
                     report_malshare = None
 
-                    if api_config.get("VirusTotal", False):
-                        report_vt_hash = get_hash_report(entry, status_output, progress_bar)
-                      # print(json.dumps(report_vt_hash, indent=4))
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    report_vt_hash = get_hash_report(entry, status_output, progress_bar)
+                  # print(json.dumps(report_vt_hash, indent=4))
+                    if progress_bar:
+                        progress_bar.value += 1
                 
 
-                    if api_config.get("MalwareBazaar", False):
-                        report_malwarebazaar = get_malwarebazaar_hash_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                    report_malwarebazaar = get_malwarebazaar_hash_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                 
 
-                    if api_config.get("AlienVault", False):
-                        report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                    report_alienvault = get_alienvault_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                 
 
-                    if api_config.get("MetaDefender", False):
-                        report_metadefender_hash = analyze_with_metadefender(entry, ioc_type="hash", metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    report_metadefender_hash = analyze_with_metadefender(entry, ioc_type="hash", metadefender_api_key=metadefender_api_key, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                 
 
-                    if api_config.get("Hybrid-Analysis", False):
-                        # Fetch Hybrid Analysis report
-                        report_hybrid_analysis = get_hybrid_analysis_hash_report(entry, status_output, progress_bar)
-                        #print("DEBUG: Report returned from get_hybrid_analysis_hash_report:", report_hybrid_analysis)
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                # Fetch Hybrid Analysis report
+                    report_hybrid_analysis = get_hybrid_analysis_hash_report(entry, status_output, progress_bar)
+                    #print("DEBUG: Report returned from get_hybrid_analysis_hash_report:", report_hybrid_analysis)
+                    if progress_bar:
+                        progress_bar.value += 1
                 
 
-                    if api_config.get("Malshare", False):
-                        # Fetch Malshare Hash Report
-                        report_malshare = get_malshare_hash_report(entry, status_output, progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                # Fetch Malshare Hash Report
+                    report_malshare = get_malshare_hash_report(entry, status_output, progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                     
                 
                     breakdown_str = ""
@@ -3644,27 +3674,26 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     report_shodan_cve = None
                     report_censys_cve = None
 
-                    if api_config.get("MITRE", False):
-                        # Fetch the MITRE CVE report
-                        report_mitre_cve = get_mitre_cve_details(entry, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+
+                    # Fetch the MITRE CVE report
+                    report_mitre_cve = get_mitre_cve_details(entry, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
 
                 
                     # Fetch the Shodan CVE report
-                    if api_config.get("Shodan", False):
-                        report_shodan_cve = search_shodan_cve_country(entry, selected_country, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                    report_shodan_cve = search_shodan_cve_country(entry, selected_country, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
             
                     # Debugging the report retrieved from Shodan
                     #print(f"DEBUG: Full Shodan CVE Report: {json.dumps(report_shodan_cve, indent=2)}")
-
-                    if api_config.get("Censys", False):
-                        # Fetch the Censys CVE report
-                        report_censys_cve = search_cves_on_censys(censys_api_key, censys_secret, entry, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+            
+                    # Fetch the Censys CVE report
+                    report_censys_cve = search_cves_on_censys(censys_api_key, censys_secret, entry, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
 
                     #print(f"DEBUG: Full Censys CVE Report: {json.dumps(report_censys_cve, indent=2)}")
                                     
@@ -3861,17 +3890,17 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     orgs = selected_category.get("orgs", [])
                     org_name = orgs[0] if orgs else "N/A"
                     
-                    if api_config.get("Shodan", False):
-                        report_shodan_org = search_shodan_org(org_name, status_output=status_output, progress_bar=progress_bar)
-                        #print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    report_shodan_org = search_shodan_org(org_name, status_output=status_output, progress_bar=progress_bar)
+                    #print(f"DEBUG: search_shodan_org returned: {report_shodan_org}")
+                    if progress_bar:
+                        progress_bar.value += 1
             
-                    if api_config.get("Censys", False):
-                        report_censys_org = search_censys_org(censys_api_key, censys_secret, org_name, status_output=status_output, progress_bar=progress_bar)
-                        #print(f"DEBUG: search_censys_org returned: {report_censys_org}")
-                        if progress_bar:
-                            progress_bar.value += 1
+                
+                    report_censys_org = search_censys_org(censys_api_key, censys_secret, org_name, status_output=status_output, progress_bar=progress_bar)
+                    #print(f"DEBUG: search_censys_org returned: {report_censys_org}")
+                    if progress_bar:
+                        progress_bar.value += 1
                 
                     
                 
@@ -4016,25 +4045,24 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         # Use the selected country from the UI, and don't filter if "All" is selected
                         selected_country = selected_country if selected_country != 'All' else None
     
-                        if api_config.get("Shodan", False):
-                            # Perform port search on Shodan, passing the selected country if applicable
-                            report_shodan_port = search_shodan_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                            if progress_bar:
-                                progress_bar.value += 1
+                        
+                        # Perform port search on Shodan, passing the selected country if applicable
+                        report_shodan_port = search_shodan_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                     
                 
-                        if api_config.get("Censys", False):
-                            # Perform port search on Censys, passing the selected country if applicable
-                            report_censys_port = search_censys_by_port(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                            #print(f"DEBUG: search_censys_by_port returned: {report_censys_port}")
-                            if progress_bar:
-                                progress_bar.value += 1
-
-                        if api_config.get("BinaryEdge", False):
-                            print(f"DEBUG: Calling BinaryEdge for port {entry} in {selected_country}")
-                            report_binaryedge_port = search_binaryedge_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                            if progress_bar:
-                                progress_bar.value += 1
+                    
+                        # Perform port search on Censys, passing the selected country if applicable
+                        report_censys_port = search_censys_by_port(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                        #print(f"DEBUG: search_censys_by_port returned: {report_censys_port}")
+                        if progress_bar:
+                            progress_bar.value += 1
+    
+                        print(f"DEBUG: Calling BinaryEdge for port {entry} in {selected_country}")
+                        report_binaryedge_port = search_binaryedge_by_port(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                        if progress_bar:
+                            progress_bar.value += 1
                     
                         
                     
@@ -4233,27 +4261,27 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                     
                     # Initialize report and other variables
                     report_shodan_product = None
+                    report_censys_product = None
+                    report_binaryedge_product = None
                     selected_country = selected_country if selected_country != 'All' else None
                 
-                    if api_config.get("Shodan", False):
-                        # Perform product search on Shodan
-                        report_shodan_product = search_shodan_product_country(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                        
-                        if progress_bar:
-                            progress_bar.value += 1
+                    
+                    # Perform product search on Shodan
+                    report_shodan_product = search_shodan_product_country(entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                    
+                    if progress_bar:
+                        progress_bar.value += 1
 
-                    if api_config.get("Censys", False):
-                        # Perform product search on Censys
-                        report_censys_product = search_censys_product_country(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
-                        #print(f"DEBUG: Type of report_censys_product: {type(report_censys_product)}")
-                        #print(f"DEBUG: Content of report_censys_product: {report_censys_product}")                    
-                        if progress_bar:
-                            progress_bar.value += 1
-                            
-                    if api_config.get("BinaryEdge", False):
-                        report_binaryedge_product = search_binaryedge_product(entry, status_output=status_output, progress_bar=progress_bar)
-                        if progress_bar:
-                            progress_bar.value += 1
+                    # Perform product search on Censys
+                    report_censys_product = search_censys_product_country(censys_api_key, censys_secret, entry, country=selected_country, status_output=status_output, progress_bar=progress_bar)
+                    #print(f"DEBUG: Type of report_censys_product: {type(report_censys_product)}")
+                    #print(f"DEBUG: Content of report_censys_product: {report_censys_product}")                    
+                    if progress_bar:
+                        progress_bar.value += 1
+
+                    report_binaryedge_product = search_binaryedge_product(entry, status_output=status_output, progress_bar=progress_bar)
+                    if progress_bar:
+                        progress_bar.value += 1
                     
 
                     total_score = 0
@@ -4457,32 +4485,30 @@ def analysis(selected_category, output_file_path=None, progress_bar=None, status
                         report_binaryedge_product_port = None
                 
                         print(f"DEBUG: Processing product-port combination search for '{product}' with port '{port}' in country '{selected_country}'")
-                        if api_config.get("Shodan", False):
-                            # Perform product-port-country search on Shodan
-                            report_shodan_product_port = search_shodan_product_port_country(
-                                product, port=port, country=selected_country,
-                                status_output=status_output, progress_bar=progress_bar
-                            )
-                            if progress_bar:
-                                progress_bar.value += 1
-
-                        if api_config.get("Censys", False):
-                            # Perform product-port-country search on Censys
-                            report_censys_product_port = search_censys_product_port_country(
-                                censys_api_key, censys_secret, product, port=port,
-                                country=selected_country, status_output=status_output, progress_bar=progress_bar
-                            )
-                            if progress_bar:
-                                progress_bar.value += 1
-
-                        if api_config.get("BinaryEdge", False):
-                            # Perform product-port search on BinaryEdge (if applicable)
-                            report_binaryedge_product_port = search_binaryedge_product_port_country(
-                                product, port=port, country=selected_country,
-                                status_output=status_output, progress_bar=progress_bar
-                            )
-                            if progress_bar:
-                                progress_bar.value += 1
+                
+                        # Perform product-port-country search on Shodan
+                        report_shodan_product_port = search_shodan_product_port_country(
+                            product, port=port, country=selected_country,
+                            status_output=status_output, progress_bar=progress_bar
+                        )
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                        # Perform product-port-country search on Censys
+                        report_censys_product_port = search_censys_product_port_country(
+                            censys_api_key, censys_secret, product, port=port,
+                            country=selected_country, status_output=status_output, progress_bar=progress_bar
+                        )
+                        if progress_bar:
+                            progress_bar.value += 1
+                
+                        # Perform product-port search on BinaryEdge (if applicable)
+                        report_binaryedge_product_port = search_binaryedge_product_port_country(
+                            product, port=port, country=selected_country,
+                            status_output=status_output, progress_bar=progress_bar
+                        )
+                        if progress_bar:
+                            progress_bar.value += 1
                 
                         # Calculate verdict and score breakdown
                         total_score, score_breakdown, verdict = calculate_total_malicious_score(

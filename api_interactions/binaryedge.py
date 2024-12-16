@@ -59,9 +59,9 @@ def get_binaryedge_report(ioc, ioc_type, status_output=None, progress_bar=None):
 
             if status_output:
                 with status_output:
-                    display(HTML(f"<b>BinaryEdge report for {ioc} retrieved successfully.</b>"))
-                    display(progress_bar)
-                print(f"BinaryEdge report for {ioc} retrieved successfully.")
+                    #display(HTML(f"<b>BinaryEdge report for {ioc} retrieved successfully.</b>"))
+                    #display(progress_bar)
+                    print(f"BinaryEdge report for {ioc} retrieved successfully.")
             if progress_bar:
                 progress_bar.value += 1  # Adjust progress increment
 
