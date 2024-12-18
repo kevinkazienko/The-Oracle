@@ -12,9 +12,9 @@ def get_mitre_cve_details(cve_id, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'Fetching MITRE report for {cve_id}'))
+            dlay(HTML(f'<b>Fetching MITRE report for {cve_id}...</b>'))
             display(progress_bar)
-        print(f"Fetching MITRE report for {cve_id}")
+        print(f"Fetching  report for {cve_id}")
 
     try:
         response = requests.get(MITRE_API_URL, headers=headers)
