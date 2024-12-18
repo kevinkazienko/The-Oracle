@@ -7,9 +7,9 @@ def submit_url_to_urlscan(url, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Submitting {url} to URLScan for analysis...</b>'))
+            display(HTML(f'Submitting {url} to URLScan'))
             display(progress_bar)
-    print(f"Submitting {url} to URLScan for analysis.")
+    print(f"Submitting {url} to URLScan")
     headers = {
         'API-Key': urlscan_api_key,
         'Content-Type': 'application/json',
@@ -35,7 +35,7 @@ def get_urlscan_report(uuid, retries=10, delay=20, status_output=None, progress_
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching URLScan report for {uuid}...</b>'))
+            display(HTML(f'Fetching URLScan report for {uuid}'))
             display(progress_bar)
     print(f"Fetching URLScan report for {uuid}.")
     for attempt in range(retries):

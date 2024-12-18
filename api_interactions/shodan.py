@@ -10,9 +10,9 @@ def get_shodan_report(query, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching Shodan report for query: {query}...</b>'))
+            display(HTML(f'Fetching Shodan report for {query}'))
             display(progress_bar)
-    print(f"Fetching Shodan report for query: {query}")
+    print(f"Fetching Shodan report for {query}")
     try:
         if is_ip(query):
             url = f"https://api.shodan.io/shodan/host/{query}"
@@ -68,9 +68,9 @@ def search_shodan_cve_country(cve, country, status_output=None, progress_bar=Non
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Searching Shodan for query: {cve}...</b>'))
+            display(HTML(f'Searching Shodan for {cve}'))
             display(progress_bar)
-    print(f"Searching Shodan for query: {cve}")
+    print(f"Searching Shodan for {cve}")
     try:
         print(f"DEBUG: Searching Shodan for CVE: {cve}, Country: {country}")
         # Ensure CVE and country are strings before quoting them, handling None
@@ -199,7 +199,7 @@ def search_shodan_org(org, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Searching Shodan for organization: {cleaned_org_name}...</b>'))
+            display(HTML(f'Searching Shodan for {cleaned_org_name}'))
             display(progress_bar)
 
     try:
@@ -285,7 +285,7 @@ def search_shodan_product_country(product, country, status_output=None, progress
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Searching Shodan for product: {cleaned_product_name} in {country if country else "any country"}...</b>'))
+            display(HTML(f'Searching Shodan for {cleaned_product_name} in {country if country else "any country"}'))
             display(progress_bar)
     
     print(f"DEBUG: Searching Shodan for product: {cleaned_product_name}, Country: {country}")
@@ -390,7 +390,7 @@ def search_shodan_by_port(port, country=None, status_output=None, progress_bar=N
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Searching Shodan for hosts with port: {port} in {country if country else "any country"}...</b>'))
+            display(HTML(f'Searching Shodan for hosts with port: {port} in {country if country else "any country"}'))
             display(progress_bar)
     print(f"Searching Shodan for hosts with port: {port} in {country if country else 'any country'}")
 
@@ -519,10 +519,10 @@ def search_shodan_product_in_country(product, country, status_output=None, progr
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Searching Shodan for product: {product} in {country}...</b>'))
+            display(HTML(f'Searching Shodan for {product} in {country}'))
             display(progress_bar)
     
-    print(f"Searching Shodan for product: {product} in {country}")
+    print(f"Searching Shodan for {product} in {country}")
     
     try:
         # Map country names to their ISO 3166-1 alpha-2 country codes
@@ -695,7 +695,7 @@ def search_shodan_product_port_country(product, port=None, country=None, status_
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>Shodan querying product {product}, port {port}, country {country}...</b>'))
+                display(HTML(f'Shodan querying {product}, port {port}, country {country}...</b>'))
                 display(progress_bar)
 
         # Make the request

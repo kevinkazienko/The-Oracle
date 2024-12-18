@@ -50,7 +50,7 @@ def analyze_with_metadefender(ioc, ioc_type=None, metadefender_api_key=None, sta
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f"<b>Metadefender querying {ioc}...</b>"))
+                display(HTML(f"Metadefender querying {ioc}"))
                 if progress_bar:
                     display(progress_bar)
                     

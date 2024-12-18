@@ -6,9 +6,9 @@ def get_greynoise_report(ip, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching GreyNoise report for: {ip}...</b>'))
+            display(HTML(f'Fetching GreyNoise report {ip}'))
             display(progress_bar)
-    print(f"Fetching GreyNoise report for: {ip}")
+    print(f"Fetching GreyNoise report {ip}")
     try:
         url = f"https://api.greynoise.io/v3/community/{ip}"
         headers = {

@@ -26,7 +26,7 @@ def request_borealis(request, ioc_type, modules=None, print_response=True, print
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching Borealis report for {request}...</b>'))
+            display(HTML(f'Fetching Borealis report for {request}'))
             display(progress_bar)
 
     print(f"DEBUG: Fetching Borealis report for {request}.")

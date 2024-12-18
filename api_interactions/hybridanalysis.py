@@ -56,11 +56,11 @@ def search_hybrid_analysis_by_term(search_term, ioc_type, status_output=None, pr
     """
     if status_output:
         with status_output:
-            clear_output(wait=True)
-            display(HTML(f'<b>Searching Hybrid Analysis for {search_term}...</b>'))
-            display(progress_bar)
+         clear_output(wait=True)
+         display(HTML(f'Searching Hybrid-Analysis for {search_term}'))
+         display(progress_bar)
 
-    print(f"Searching Hybrid Analysis for term: {search_term} (Type: {ioc_type})")
+    print(f"Searching Hybrid-Analysis for {search_term} (Type: {ioc_type})")
     search_url = f"{HYBRID_ANALYSIS_BASE_URL}/search/terms"
     headers = {
         "accept": "application/json",
@@ -228,10 +228,10 @@ def get_hybrid_analysis_hash_report(file_hash, status_output=None, progress_bar=
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching Hybrid Analysis report for {file_hash}...</b>'))
+            display(HTML(f'Fetching Hybrid Analysis report for {file_hash}'))
             display(progress_bar)
 
-    print(f"Fetching Hybrid Analysis report for {file_hash}.")
+    print(f"Fetching Hybrid Analysis report {file_hash}.")
     url = f"{HYBRID_ANALYSIS_BASE_URL}/search/hashes"
     headers = {
         "accept": "application/json",
@@ -319,7 +319,7 @@ def submit_hybridhash_for_rescan(file_hash, status_output=None, progress_bar=Non
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Submitting {file_hash} for rescan...</b>'))
+            display(HTML(f'Submitting {file_hash} for rescan'))
             display(progress_bar)
 
     print(f"Submitting {file_hash} for rescan.")
@@ -337,7 +337,7 @@ def submit_hybridhash_for_rescan(file_hash, status_output=None, progress_bar=Non
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>{file_hash} rescan submitted successfully.</b>'))
+                display(HTML(f'{file_hash} rescan submitted successfully.'))
                 display(progress_bar)
         print(f"{file_hash} submitted for rescan.")
         return response.json()
@@ -353,7 +353,7 @@ def submit_url_to_hybrid_analysis(url, ioc_type, status_output=None, progress_ba
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Submitting {url} for quick-scan...</b>'))
+            display(HTML(f'Submitting {url} for quick-scan'))
             display(progress_bar)
 
     print(f"Submitting {url} for quick-scan.")
@@ -394,7 +394,7 @@ def fetch_hybrid_analysis_report(submission_id, status_output=None, progress_bar
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>Checking results for Submission ID: {submission_id}...</b>'))
+                display(HTML(f'Checking results for Submission ID: {submission_id}'))
                 display(progress_bar)
 
         print(f"Fetching results for Submission ID: {submission_id}...")

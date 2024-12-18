@@ -40,7 +40,7 @@ def get_binaryedge_report(ioc, ioc_type, status_output=None, progress_bar=None):
         else:
             if status_output:
                 with status_output:
-                    display(HTML(f"<b>Error: Unsupported IOC type '{ioc_type}'.</b>"))
+                    display(HTML(f"Error: Unsupported IOC type '{ioc_type}'."))
                     display(progress_bar)
             print(f"Error: Unsupported IOC type '{ioc_type}'")
             return None
@@ -48,9 +48,9 @@ def get_binaryedge_report(ioc, ioc_type, status_output=None, progress_bar=None):
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f"<b>BinaryEdge querying {ioc}...</b>"))
+                display(HTML(f"BinaryEdge querying {ioc}"))
                 display(progress_bar)
-        print(f"Querying {ioc} in BinaryEdge...")
+        print(f"Querying {ioc} in BinaryEdge")
 
         response = requests.get(url, headers=headers)
 
@@ -69,12 +69,12 @@ def get_binaryedge_report(ioc, ioc_type, status_output=None, progress_bar=None):
         else:
             if status_output:
                 with status_output:
-                    display(HTML(f"<b>Error: Received status code {response.status_code} from BinaryEdge API.</b>"))
+                    display(HTML(f"Error: Received status code {response.status_code} from BinaryEdge API."))
             return {'status': response.status_code, 'message': response.text}
     except Exception as e:
         if status_output:
             with status_output:
-                display(HTML(f"<b>Exception occurred while querying BinaryEdge: {str(e)}</b>"))
+                display(HTML(f"Exception occurred while querying BinaryEdge: {str(e)}"))
         return None
 
 
@@ -134,7 +134,7 @@ def search_binaryedge_by_port(port, country=None, status_output=None, progress_b
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f"<b>BinaryEdge querying port {port}...</b>"))
+                display(HTML(f"BinaryEdge querying port {port}"))
                 display(progress_bar)
         
         print(f"Querying BinaryEdge with query: {query}")
@@ -270,7 +270,7 @@ def search_binaryedge_product_port_country(product, port=None, country=None, sta
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f"<b>BinaryEdge querying product {product}, port {port}, country {country}...</b>"))
+            display(HTML(f"BinaryEdge querying {product}:{port}, in {country}"))
             display(progress_bar)
 
     response = requests.get(url, headers=headers)

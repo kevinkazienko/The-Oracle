@@ -7,9 +7,9 @@ def get_abuseipdb_report(ip, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching IP report from AbuseIPDB for {ip}...</b>'))
+            display(HTML(f'Fetching report from AbuseIPDB for {ip}<'))
             display(progress_bar)
-    print(f"Fetching IP report in AbuseIPDB for {ip}")
+    print(f"Fetching report from AbuseIPDB for {ip}")
     url = f"https://api.abuseipdb.com/api/v2/check"
     params = {
         'ipAddress': ip,

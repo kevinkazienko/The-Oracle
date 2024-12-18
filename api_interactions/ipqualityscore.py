@@ -21,7 +21,7 @@ def get_ipqualityscore_report(ioc, full_report=False, status_output=None, progre
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching IPQualityScore report for: {ioc}...</b>'))
+            display(HTML(f'Fetching IPQualityScore report for: {ioc}'))
             display(progress_bar)
     print(f"Fetching IPQualityScore report for: {ioc}")
     

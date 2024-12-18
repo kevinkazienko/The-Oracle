@@ -8,9 +8,9 @@ def get_alienvault_report(query, status_output=None, progress_bar=None, verbose=
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching AlienVault OTX report for query: {query}...</b>'))
+            display(HTML(f'Fetching AlienVault report for query: {query}'))
             display(progress_bar)
-    print(f"Fetching AlienVault OTX report for query: {query}")
+    print(f"Fetching AlienVault report for query: {query}")
     try:
         if is_ip(query):
             url = f"https://otx.alienvault.com/api/v1/indicators/IPv4/{query}/general"

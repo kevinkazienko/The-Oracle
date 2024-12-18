@@ -29,7 +29,7 @@ def get_ip_report(ip, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching VirusTotal report for {ip}...</b>'))
+            display(HTML(f'Fetching VirusTotal report for {ip}'))
             display(progress_bar)
     print(f"Fetching VirusTotal report for {ip}.")
     url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}"
@@ -93,9 +93,9 @@ def get_ip_passive_dns(ip, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching Passive DNS data for IP: {ip}...</b>'))
+            display(HTML(f'Fetching Passive DNS data for {ip}'))
             display(progress_bar)
-    print(f"Fetching Passive DNS data for IP: {ip}")
+    print(f"Fetching Passive DNS data for {ip}")
     
     url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}/resolutions"
     headers = {
@@ -121,7 +121,7 @@ def get_ip_communicating_files(ip, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching Communicating Files for IP: {ip}...</b>'))
+            display(HTML(f'Fetching Communicating Files for {ip}'))
             display(progress_bar)    
     print(f"Fetching Communicating Files for IP: {ip}")
     
@@ -217,7 +217,7 @@ def submit_ip_for_rescan(ip, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Submitting {ip} for rescan...</b>'))
+            display(HTML(f'Submitting {ip} for rescan'))
             display(progress_bar)
     print(f"Submitting {ip} for rescan.")
     
@@ -232,7 +232,7 @@ def submit_ip_for_rescan(ip, status_output=None, progress_bar=None):
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>{ip} rescan submitted successfully.</b>'))
+                display(HTML(f'{ip} rescan submitted successfully.'))
                 display(progress_bar)
         print(f"{ip} submitted for rescan.")
         return response.json()
@@ -240,7 +240,7 @@ def submit_ip_for_rescan(ip, status_output=None, progress_bar=None):
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>Failed to submit{ip} for rescan. Status Code: {response.status_code}</b>'))
+                display(HTML(f'Failed to submit{ip} for rescan. Status Code: {response.status_code}'))
                 display(progress_bar)
         print(f"Failed to submit {ip} for rescan. Status Code: {response.status_code}")
         return None
@@ -249,9 +249,9 @@ def submit_url_for_analysis(url, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Submitting {url} to VirusTotal for analysis...</b>'))
+            display(HTML(f'Submitting {url} to VirusTotal'))
             display(progress_bar)
-    print(f"Submitting {url} to VirusTotal for analysis.")
+    print(f"Submitting {url} to VirusTotal")
     print(f"DEBUG: VirusTotal URL report endpoint: https://www.virustotal.com/api/v3/urls/{url}")
     url_endpoint = "https://www.virustotal.com/api/v3/urls"
     url_encoded = base64.urlsafe_b64encode(url.encode()).decode().strip("=")  # Encode the URL in base64
@@ -273,9 +273,9 @@ def get_url_report(url_id, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching VirusTotal report for ID: {url_id}...</b>'))
+            display(HTML(f'Fetching VirusTotal report for {url_id}'))
             display(progress_bar)
-    print(f"Fetching VirusTotal report for ID: {url_id}")
+    print(f"Fetching VirusTotal report for {url_id}")
     print(f"DEBUG: VirusTotal URL report endpoint: https://www.virustotal.com/api/v3/urls/{url_id}")
     url = f"https://www.virustotal.com/api/v3/urls/{url_id}"
     headers = {
@@ -335,7 +335,7 @@ def submit_url_for_rescan(url_id, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Submitting ID {url_id} for rescan...</b>'))
+            display(HTML(f'Submitting ID {url_id} for rescan'))
             display(progress_bar)
     print(f"Submitting ID {url_id} for rescan.")
     
@@ -350,7 +350,7 @@ def submit_url_for_rescan(url_id, status_output=None, progress_bar=None):
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>ID {url_id} rescan submitted successfully.</b>'))
+                display(HTML(f'ID {url_id} rescan submitted successfully.'))
                 display(progress_bar)
         print(f"ID {url_id} submitted for rescan.")
         return response.json()
@@ -358,7 +358,7 @@ def submit_url_for_rescan(url_id, status_output=None, progress_bar=None):
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>Failed to submit ID {url_id} for rescan. Status Code: {response.status_code}</b>'))
+                display(HTML(f'Failed to submit ID {url_id} for rescan. Status Code: {response.status_code}'))
                 display(progress_bar)
         print(f"Failed to submit ID {url_id} for rescan. Status Code: {response.status_code}")
         return None
@@ -398,7 +398,7 @@ def submit_domain_for_rescan(domain, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Submitting {domain} for rescan...</b>'))
+            display(HTML(f'Submitting {domain} for rescan'))
             display(progress_bar)
     print(f"Submitting {domain} for rescan.")
     
@@ -413,7 +413,7 @@ def submit_domain_for_rescan(domain, status_output=None, progress_bar=None):
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>{domain} rescan submitted successfully.</b>'))
+                display(HTML(f'{domain} rescan submitted successfully.'))
                 display(progress_bar)
         print(f"{domain} submitted for rescan.")
         print(f"DEBUG: VirusTotal Domain rescan endpoint: https://www.virustotal.com/api/v3/domains/{domain}/analyse")
@@ -422,7 +422,7 @@ def submit_domain_for_rescan(domain, status_output=None, progress_bar=None):
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>Failed to submit {domain} for rescan. Status Code: {response.status_code}</b>'))
+                display(HTML(f'Failed to submit {domain} for rescan. Status Code: {response.status_code}'))
                 display(progress_bar)
         print(f"Failed to submit {domain} for rescan. Status Code: {response.status_code}")
         return None
@@ -431,9 +431,9 @@ def get_domain_report(domain, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching VirusTotal report for: {domain}...</b>'))
+            display(HTML(f'Fetching VirusTotal report for {domain}'))
             display(progress_bar)
-    print(f"Fetching VirusTotal report for: {domain}")
+    print(f"Fetching VirusTotal report for {domain}")
     print(f"DEBUG: VirusTotal Domain report endpoint: https://www.virustotal.com/api/v3/domains/{domain}")
     url = f"https://www.virustotal.com/api/v3/domains/{domain}"
     headers = {
@@ -527,9 +527,9 @@ def get_domain_passive_dns(domain, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching Passive DNS data for Domain: {domain}...</b>'))
+            display(HTML(f'Fetching Passive DNS data for {domain}'))
             display(progress_bar)
-    print(f"Fetching Passive DNS data for Domain: {domain}")
+    print(f"Fetching Passive DNS data for {domain}")
     
     url = f"https://www.virustotal.com/api/v3/domains/{domain}/resolutions?limit=10"
     headers = {
@@ -595,7 +595,7 @@ def get_hash_report(hash_id, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching VirusTotal report for {hash_id}...</b>'))
+            display(HTML(f'Fetching VirusTotal report for {hash_id}'))
             display(progress_bar)
     print(f"Fetching VirusTotal report for {hash_id}.")
     url = f"https://www.virustotal.com/api/v3/files/{hash_id}"
@@ -707,7 +707,7 @@ def submit_hash_for_rescan(hash_id, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Submitting {hash_id} for rescan...</b>'))
+            display(HTML(f'Submitting {hash_id} for rescan'))
             display(progress_bar)
     print(f"Submitting {hash_id} for rescan.")
     
@@ -722,7 +722,7 @@ def submit_hash_for_rescan(hash_id, status_output=None, progress_bar=None):
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>{hash_id} rescan submitted successfully.</b>'))
+                display(HTML(f'{hash_id} rescan submitted successfully.'))
                 display(progress_bar)
         print(f"{hash_id} submitted for rescan.")
         return response.json()
@@ -730,7 +730,7 @@ def submit_hash_for_rescan(hash_id, status_output=None, progress_bar=None):
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>Failed to submit {hash_id} for rescan. Status Code: {response.status_code}</b>'))
+                display(HTML(f'Failed to submit {hash_id} for rescan. Status Code: {response.status_code}'))
                 display(progress_bar)
         print(f"Failed to submit {hash_id} for rescan. Status Code: {response.status_code}")
         return None

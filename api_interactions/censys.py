@@ -19,7 +19,7 @@ def get_censys_data(censys_api_key, censys_secret, query, status_output=None, pr
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching report from Censys for {query}...</b>'))
+            display(HTML(f'Fetching Censys report for {query}'))
             display(progress_bar)
             #print(f'<b>Fetching report from Censys for {query}...</b>')
     
@@ -99,9 +99,9 @@ def search_cves_on_censys(censys_api_key, censys_secret, query, country=None, st
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Searching CVEs on Censys for {query}...</b>'))
+            display(HTML(f'Searching Censys for {query}'))
             display(progress_bar)
-    print(f"Searching Censys for query: {query}")
+    print(f"Searching Censys for {query}")
 
     API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
     UID = censys_api_key
@@ -234,9 +234,9 @@ def search_censys_org(censys_api_key, censys_secret, org_name, status_output=Non
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Searching organizations on Censys for {cleaned_org_name}...</b>'))
+            display(HTML(f'Searching Censys for {cleaned_org_name}'))
             display(progress_bar)
-    print(f"Searching Censys for query: {cleaned_org_name}")
+    print(f"Searching Censys for {cleaned_org_name}")
 
     API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
     UID = censys_api_key
@@ -321,7 +321,7 @@ def search_censys_by_port(censys_api_key, censys_secret, port, country=None, sta
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Searching Censys for port {port} in {country or "all countries"}...</b>'))
+            display(HTML(f'Searching Censys for port {port} in {country or "all countries"}'))
             display(progress_bar)
     print(f"Searching Censys for port {port}")
 
@@ -468,9 +468,9 @@ def search_censys_product_country(censys_api_key, censys_secret, product, countr
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Searching Censys for product {product} in {country or "all countries"}...</b>'))
+            display(HTML(f'Searching Censys for {product} in {country or "all countries"}'))
             display(progress_bar)
-    print(f"Searching Censys for query: {product}")
+    print(f"Searching Censys for {product}")
 
     API_URL_SEARCH = "https://search.censys.io/api/v2/hosts/search"
     UID = censys_api_key
@@ -579,7 +579,7 @@ def search_censys_product_port_country(censys_api_key, censys_secret, product, p
         if status_output:
             with status_output:
                 clear_output(wait=True)
-                display(HTML(f'<b>Querying Censys for product: {product}, port: {port}, country: {country}</b>'))
+                display(HTML(f'Querying Censys for {product}, {port}, {country}'))
                 display(progress_bar)
 
         # Make the request to the Censys API
