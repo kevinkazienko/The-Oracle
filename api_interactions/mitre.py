@@ -12,7 +12,7 @@ def get_mitre_cve_details(cve_id, status_output=None, progress_bar=None):
     if status_output:
         with status_output:
             clear_output(wait=True)
-            display(HTML(f'<b>Fetching MITRE report for {cve_id}...</b>'))
+            display(HTML(f'Fetching MITRE report for {cve_id}'))
             display(progress_bar)
         print(f"Fetching  report for {cve_id}")
 
