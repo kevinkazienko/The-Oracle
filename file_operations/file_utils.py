@@ -84,18 +84,11 @@ def is_ip(s):
     return re.match(ipv4_pattern, s) is not None or re.match(ipv6_pattern, s) is not None
 
 def is_url(s):
-    # Enhanced regular expression to match both domain-based and IP-based URLs, including optional ports and paths
-    pattern = r"^https?:\/\/(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?::\d+)?(?:\/[\w\-._~:/?#[\]@!$&'()*+,;=]*)?$|^https?:\/\/(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:\/[\w\-._~:/?#[\]@!$&'()*+,;=]*)?$"
+    # Enhanced regular expression to match URLs with support for URL-encoded characters
+    pattern = r"^https?:\/\/(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?::\d+)?(?:\/[\w\-._~:/?#[\]@!$&'()*+,;=%]*)?$|^https?:\/\/(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:\/[\w\-._~:/?#[\]@!$&'()*+,;=%]*)?$"
     match = re.match(pattern, s)
-
-    # Debug output to check what is being matched
-    #print(f"DEBUG: Testing if '{s}' is a URL.")
-    # if match:
-    #     print(f"DEBUG: '{s}' is detected as a URL.")
-    # else:
-    #     print(f"DEBUG: '{s}' is NOT detected as a URL.")
-
     return match is not None
+
 
 def is_hash(ioc):
     # Check for common hash patterns (MD5, SHA1, SHA256)
